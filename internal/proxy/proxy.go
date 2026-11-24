@@ -9,6 +9,7 @@ import (
 
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/budget"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/config"
+	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/router"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/storage"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/telemetry"
 )
@@ -19,11 +20,12 @@ type Server struct {
 	store    *storage.Store
 	recorder *telemetry.Recorder
 	guard    *budget.Guard
+	engine   *router.Engine
 	client   *http.Client
 	mux      *http.ServeMux
 }
 
-// NewServer constructs a proxy Server with configured timeouts and routes.
+// NewServer constructs a proxy Server with configured timeouts, policy router, and routes.
 func NewServer(cfg *config.Config, store *storage.Store, recorder *telemetry.Recorder, guard *budget.Guard) *Server {
 	dialTimeout := time.Duration(cfg.Server.ConnectTimeoutMs) * time.Millisecond
 	firstByteTimeout := time.Duration(cfg.Server.FirstByteTimeoutMs) * time.Millisecond
@@ -38,11 +40,18 @@ func NewServer(cfg *config.Config, store *storage.Store, recorder *telemetry.Rec
 		IdleConnTimeout:       90 * time.Second,
 	}
 
+	eng, err := router.NewEngine(cfg)
+	if err != nil {
+		// Fall back to rule-less pass-through engine if config regex fails.
+		eng, _ = router.NewEngine(&config.Config{Providers: cfg.Providers, Routing: config.RoutingConfig{DefaultTarget: cfg.Routing.DefaultTarget, NeverDowngrade: cfg.Routing.NeverDowngrade}})
+	}
+
 	s := &Server{
 		cfg:      cfg,
 		store:    store,
 		recorder: recorder,
 		guard:    guard,
+		engine:   eng,
 		client:   &http.Client{Transport: transport},
 		mux:      http.NewServeMux(),
 	}
@@ -51,6 +60,8 @@ func NewServer(cfg *config.Config, store *storage.Store, recorder *telemetry.Rec
 	s.mux.HandleFunc("/metrics/summary", s.handleMetricsSummary)
 	s.mux.HandleFunc("/v1beta/models/", s.handleGemini)
 	s.mux.HandleFunc("/v1/chat/completions", s.handleOpenAIChat)
+	s.mux.HandleFunc("/v1/responses", s.handleOpenAIResponses)
+	s.mux.HandleFunc("/v1/messages", s.handleAnthropicMessages)
 
 	return s
 }
@@ -75,6 +86,34 @@ func (s *Server) handleMetricsSummary(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(sum)
 }
 
+func (s *Server) buildCandidates(dec router.Decision, budgetDec budget.Decision) []router.RouteTarget {
+	var candidates []router.RouteTarget
+	if budgetDec.Action == "downgrade" && budgetDec.DowngradeTarget != "" {
+		if dt, ok := router.ParseTarget(budgetDec.DowngradeTarget); ok {
+			candidates = append(candidates, dt)
+		}
+	}
+	candidates = append(candidates, dec.Primary)
+	candidates = append(candidates, dec.Fallbacks...)
+	return candidates
+}
+
+func (s *Server) computeSavings(baselineProvider, baselineModel, routedProvider, routedModel string, promptTokens, completionTokens, cachedTokens int64, actualCost float64) (baselineCost, savedCost float64, savedTokens int64) {
+	baselinePricing, ok := s.cfg.LookupPricing(baselineProvider, baselineModel)
+	if ok {
+		baselineCost = telemetry.CalculateCost(baselinePricing, promptTokens, completionTokens, cachedTokens)
+	} else {
+		baselineCost = actualCost
+	}
+	if baselineCost > actualCost {
+		savedCost = baselineCost - actualCost
+	}
+	if p, ok := s.cfg.Providers[routedProvider]; ok && p.Type == "openai_compatible" && actualCost == 0 {
+		savedTokens = promptTokens + completionTokens
+	}
+	return baselineCost, savedCost, savedTokens
+}
+
 func extractScopes(r *http.Request) (projectID, sessionID string) {
 	projectID = strings.TrimSpace(r.Header.Get("X-Router-Project"))
 	if projectID == "" {
@@ -85,15 +124,6 @@ func extractScopes(r *http.Request) (projectID, sessionID string) {
 		sessionID = "default"
 	}
 	return projectID, sessionID
-}
-
-func hasNeverDowngradeHeader(r *http.Request, cfg config.NeverDowngradeConfig) bool {
-	for k, expected := range cfg.Headers {
-		if strings.EqualFold(strings.TrimSpace(r.Header.Get(k)), expected) {
-			return true
-		}
-	}
-	return false
 }
 
 func copyRequestHeaders(src, dst http.Header) {

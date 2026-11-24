@@ -3,12 +3,13 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/config"
+	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/router"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/storage"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/telemetry"
 )
@@ -36,24 +37,34 @@ func parseGeminiPath(urlPath string) (model string, action string, ok bool) {
 	return rest[:idx], rest[idx+1:], true
 }
 
-func detectGeminiNeverDowngrade(r *http.Request, body []byte, cfg config.NeverDowngradeConfig) bool {
-	if hasNeverDowngradeHeader(r, cfg) {
-		return true
-	}
-	if !cfg.WhenReasoningParamsPresent {
-		return false
-	}
+func extractGeminiMeta(body []byte) (systemPrompt string, hasTools bool, hasReasoning bool) {
 	var payload struct {
+		SystemInstruction *struct {
+			Parts []struct {
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"systemInstruction"`
+		Tools            json.RawMessage `json:"tools"`
 		GenerationConfig struct {
 			ThinkingConfig json.RawMessage `json:"thinkingConfig"`
 		} `json:"generationConfig"`
 	}
 	if err := json.Unmarshal(body, &payload); err == nil {
+		if payload.SystemInstruction != nil {
+			var sb strings.Builder
+			for _, p := range payload.SystemInstruction.Parts {
+				sb.WriteString(p.Text)
+			}
+			systemPrompt = sb.String()
+		}
+		if len(payload.Tools) > 0 && string(payload.Tools) != "null" && string(payload.Tools) != "[]" {
+			hasTools = true
+		}
 		if len(payload.GenerationConfig.ThinkingConfig) > 0 && string(payload.GenerationConfig.ThinkingConfig) != "null" {
-			return true
+			hasReasoning = true
 		}
 	}
-	return false
+	return systemPrompt, hasTools, hasReasoning
 }
 
 func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
@@ -75,82 +86,155 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	providerName := "gemini"
-	pCfg, exists := s.cfg.Providers[providerName]
-	if !exists {
-		writeJSONError(w, http.StatusBadGateway, "gemini provider not configured")
-		return
-	}
+	isStream := action == "streamGenerateContent"
+	sysPrompt, hasTools, hasReasoning := extractGeminiMeta(reqBody)
+	routeDec := s.engine.Evaluate(router.RequestContext{
+		APIFormat:          "gemini_native",
+		RequestedModel:     model,
+		Headers:            r.Header,
+		SystemPrompt:       sysPrompt,
+		EstimatedTokens:    len(reqBody) / 4,
+		HasTools:           hasTools,
+		HasReasoningParams: hasReasoning,
+	})
 
 	projectID, sessionID := extractScopes(r)
-	neverDowngrade := detectGeminiNeverDowngrade(r, reqBody, s.cfg.Routing.NeverDowngrade)
-	isStream := action == "streamGenerateContent"
-
-	decision, err := s.guard.Check(r.Context(), projectID, sessionID, neverDowngrade)
+	budgetDec, err := s.guard.Check(r.Context(), projectID, sessionID, routeDec.NeverDowngrade)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "budget check failed")
 		return
 	}
-	if !decision.Allowed {
+	if !budgetDec.Allowed {
 		w.Header().Set("X-Router-Budget-Blocked", "true")
-		writeJSONError(w, http.StatusTooManyRequests, decision.BlockReason)
+		writeJSONError(w, http.StatusTooManyRequests, budgetDec.BlockReason)
 		return
 	}
-	if decision.SoftWarn {
-		w.Header().Set("X-Router-Budget-Warning", decision.WarningMsg)
+	if budgetDec.SoftWarn {
+		w.Header().Set("X-Router-Budget-Warning", budgetDec.WarningMsg)
 	}
 
-	targetURL := strings.TrimRight(pCfg.BaseURL, "/") + r.URL.Path
-	if r.URL.RawQuery != "" {
-		targetURL += "?" + r.URL.RawQuery
-	}
-
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(reqBody))
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "build upstream request failed")
-		return
-	}
-	copyRequestHeaders(r.Header, upReq.Header)
-	if upReq.Header.Get("x-goog-api-key") == "" {
-		if key := s.cfg.ResolveAPIKey(providerName); key != "" {
-			upReq.Header.Set("x-goog-api-key", key)
-		}
-	}
-
+	candidates := s.buildCandidates(routeDec, budgetDec)
 	preUpstreamMs := time.Since(start).Milliseconds()
-	resp, err := s.client.Do(upReq)
+
+	resp, winner, fallbackAttempts, err := executeWithFallback(r.Context(), candidates, func(t router.RouteTarget) (*http.Request, error) {
+		pCfg, exists := s.cfg.Providers[t.Provider]
+		if !exists {
+			return nil, fmt.Errorf("provider %q not configured", t.Provider)
+		}
+
+		// Cross-protocol offload: Gemini Native -> OpenAI-compatible (e.g. Ollama)
+		if pCfg.Type == "openai" || pCfg.Type == "openai_compatible" {
+			oaiBody, convErr := geminiToOpenAIRequest(reqBody, t.Model, isStream)
+			if convErr != nil {
+				return nil, convErr
+			}
+			targetURL := strings.TrimRight(pCfg.BaseURL, "/") + "/chat/completions"
+			upReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(oaiBody))
+			if reqErr != nil {
+				return nil, reqErr
+			}
+			upReq.Header.Set("Content-Type", "application/json")
+			if key := s.cfg.ResolveAPIKey(t.Provider); key != "" {
+				upReq.Header.Set("Authorization", "Bearer "+key)
+			}
+			return upReq, nil
+		}
+
+		targetURL := strings.TrimRight(pCfg.BaseURL, "/") + "/v1beta/models/" + t.Model + ":" + action
+		if r.URL.RawQuery != "" {
+			targetURL += "?" + r.URL.RawQuery
+		}
+		upReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(reqBody))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		copyRequestHeaders(r.Header, upReq.Header)
+		if upReq.Header.Get("x-goog-api-key") == "" {
+			if key := s.cfg.ResolveAPIKey(t.Provider); key != "" {
+				upReq.Header.Set("x-goog-api-key", key)
+			}
+		}
+		return upReq, nil
+	}, s.client)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, "upstream request failed: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
+	winCfg := s.cfg.Providers[winner.Provider]
+	translated := winCfg.Type == "openai" || winCfg.Type == "openai_compatible"
+
 	copyResponseHeaders(resp.Header, w.Header())
-	w.Header().Set("X-Router-Provider", providerName)
-	w.Header().Set("X-Router-Model", model)
+	if translated {
+		if isStream && resp.StatusCode == http.StatusOK {
+			w.Header().Set("Content-Type", "text/event-stream")
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+		}
+	}
+	w.Header().Set("X-Router-Provider", winner.Provider)
+	w.Header().Set("X-Router-Model", winner.Model)
+	if routeDec.RuleName != "" {
+		w.Header().Set("X-Router-Rule", routeDec.RuleName)
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	var usage geminiUsageMetadata
 	var firstByte time.Time
 
-	if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		firstByte, err = forwardSSE(w, resp.Body, func(payload []byte) {
-			var env geminiUsageEnvelope
-			if json.Unmarshal(payload, &env) == nil && env.UsageMetadata != nil {
-				usage = *env.UsageMetadata
+	if translated {
+		if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+			flusher, _ := w.(http.Flusher)
+			firstByte, _ = forwardSSETransform(resp.Body, func(payload []byte) {
+				gemChunk, u := openAISSEChunkToGemini(payload)
+				if u != nil {
+					usage = *u
+				}
+				if len(gemChunk) > 0 {
+					if firstByte.IsZero() {
+						firstByte = time.Now()
+					}
+					_, _ = fmt.Fprintf(w, "data: %s\n\n", gemChunk)
+					if flusher != nil {
+						flusher.Flush()
+					}
+				}
+			})
+		} else {
+			respBytes, readErr := io.ReadAll(resp.Body)
+			firstByte = time.Now()
+			if readErr == nil && resp.StatusCode == http.StatusOK {
+				gemBytes, u, convErr := openAIToGeminiResponse(respBytes)
+				if convErr == nil {
+					usage = u
+					_, _ = w.Write(gemBytes)
+				} else {
+					_, _ = w.Write(respBytes)
+				}
+			} else if readErr == nil {
+				_, _ = w.Write(respBytes)
 			}
-		})
-	} else {
-		respBytes, readErr := io.ReadAll(resp.Body)
-		firstByte = time.Now()
-		if readErr == nil {
-			var env geminiUsageEnvelope
-			if json.Unmarshal(respBytes, &env) == nil && env.UsageMetadata != nil {
-				usage = *env.UsageMetadata
-			}
-			_, _ = w.Write(respBytes)
 		}
-		err = readErr
+	} else {
+		if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+			firstByte, _ = forwardSSE(w, resp.Body, func(payload []byte) {
+				var env geminiUsageEnvelope
+				if json.Unmarshal(payload, &env) == nil && env.UsageMetadata != nil {
+					usage = *env.UsageMetadata
+				}
+			})
+		} else {
+			respBytes, readErr := io.ReadAll(resp.Body)
+			firstByte = time.Now()
+			if readErr == nil {
+				var env geminiUsageEnvelope
+				if json.Unmarshal(respBytes, &env) == nil && env.UsageMetadata != nil {
+					usage = *env.UsageMetadata
+				}
+				_, _ = w.Write(respBytes)
+			}
+		}
 	}
 
 	totalMs := time.Since(start).Milliseconds()
@@ -160,8 +244,9 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	completionTokens := usage.CandidatesTokenCount + usage.ThoughtsTokenCount
-	pricing, _ := s.cfg.LookupPricing(providerName, model)
+	pricing, _ := s.cfg.LookupPricing(winner.Provider, winner.Model)
 	cost := telemetry.CalculateCost(pricing, usage.PromptTokenCount, completionTokens, usage.CachedContentTokenCount)
+	baselineCost, savedCost, savedTokens := s.computeSavings("gemini", model, winner.Provider, winner.Model, usage.PromptTokenCount, completionTokens, usage.CachedContentTokenCount, cost)
 
 	_ = s.guard.Record(r.Context(), projectID, sessionID, usage.PromptTokenCount+completionTokens, cost)
 	_ = s.recorder.Record(r.Context(), storage.RequestLog{
@@ -170,8 +255,10 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		SessionID:        sessionID,
 		APIFormat:        "gemini_native",
 		RequestedModel:   model,
-		RoutedProvider:   providerName,
-		RoutedModel:      model,
+		RoutedProvider:   winner.Provider,
+		RoutedModel:      winner.Model,
+		RouteRule:        routeDec.RuleName,
+		FallbackAttempts: fallbackAttempts,
 		IsStream:         isStream,
 		StatusCode:       resp.StatusCode,
 		CacheStatus:      "miss",
@@ -179,7 +266,9 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		CompletionTokens: completionTokens,
 		CachedTokens:     usage.CachedContentTokenCount,
 		EstimatedCostUSD: cost,
-		BaselineCostUSD:  cost,
+		BaselineCostUSD:  baselineCost,
+		SavedCostUSD:     savedCost,
+		SavedTokens:      savedTokens,
 		TTFBMs:           ttfbMs,
 		TotalMs:          totalMs,
 		ProxyOverheadMs:  preUpstreamMs,

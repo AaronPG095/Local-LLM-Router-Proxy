@@ -3,12 +3,13 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/config"
+	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/router"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/storage"
 	"github.com/AaronPG095/Local-LLM-Router-Proxy/internal/telemetry"
 )
@@ -25,20 +26,31 @@ type openAIEnvelope struct {
 	Usage *openAIUsage `json:"usage"`
 }
 
-func detectOpenAINeverDowngrade(r *http.Request, body []byte, cfg config.NeverDowngradeConfig) bool {
-	if hasNeverDowngradeHeader(r, cfg) {
-		return true
-	}
-	if !cfg.WhenReasoningParamsPresent {
-		return false
-	}
+func extractOpenAIMeta(raw []byte) (systemPrompt string, hasTools bool, hasReasoning bool) {
 	var payload struct {
-		ReasoningEffort string `json:"reasoning_effort"`
+		ReasoningEffort string          `json:"reasoning_effort"`
+		Tools           json.RawMessage `json:"tools"`
+		Messages        []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
 	}
-	if err := json.Unmarshal(body, &payload); err == nil && payload.ReasoningEffort != "" {
-		return true
+	if err := json.Unmarshal(raw, &payload); err == nil {
+		if payload.ReasoningEffort != "" {
+			hasReasoning = true
+		}
+		if len(payload.Tools) > 0 && string(payload.Tools) != "null" && string(payload.Tools) != "[]" {
+			hasTools = true
+		}
+		var sb strings.Builder
+		for _, m := range payload.Messages {
+			if m.Role == "system" || m.Role == "developer" {
+				sb.WriteString(m.Content)
+			}
+		}
+		systemPrompt = sb.String()
 	}
-	return false
+	return systemPrompt, hasTools, hasReasoning
 }
 
 // prepareOpenAIBody extracts model/stream flags and injects stream_options.include_usage=true
@@ -65,29 +77,6 @@ func prepareOpenAIBody(raw []byte) (modified []byte, model string, isStream bool
 	return raw, model, isStream
 }
 
-func (s *Server) resolveOpenAIProvider(requestedModel string) (string, config.ProviderConfig, string, bool) {
-	// Direct prefix syntax: "ollama:qwen2.5-coder:7b" or "openai:gpt-4o"
-	if idx := strings.IndexByte(requestedModel, ':'); idx > 0 {
-		prefix := requestedModel[:idx]
-		if p, ok := s.cfg.Providers[prefix]; ok {
-			return prefix, p, requestedModel[idx+1:], true
-		}
-	}
-	// Check if model pricing explicitly exists under ollama vs openai
-	if p, ok := s.cfg.Providers["ollama"]; ok {
-		if _, hasModel := p.PricingPer1M[requestedModel]; hasModel {
-			return "ollama", p, requestedModel, true
-		}
-	}
-	if p, ok := s.cfg.Providers["openai"]; ok {
-		return "openai", p, requestedModel, true
-	}
-	if p, ok := s.cfg.Providers["ollama"]; ok {
-		return "ollama", p, requestedModel, true
-	}
-	return "", config.ProviderConfig{}, requestedModel, false
-}
-
 func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if r.Method != http.MethodPost {
@@ -102,52 +91,58 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reqBody, requestedModel, isStream := prepareOpenAIBody(rawBody)
-	providerName, pCfg, targetModel, ok := s.resolveOpenAIProvider(requestedModel)
-	if !ok {
-		writeJSONError(w, http.StatusBadGateway, "no openai-compatible provider configured")
-		return
-	}
+	sysPrompt, hasTools, hasReasoning := extractOpenAIMeta(rawBody)
+
+	routeDec := s.engine.Evaluate(router.RequestContext{
+		APIFormat:          "openai_chat",
+		RequestedModel:     requestedModel,
+		Headers:            r.Header,
+		SystemPrompt:       sysPrompt,
+		EstimatedTokens:    len(rawBody) / 4,
+		HasTools:           hasTools,
+		HasReasoningParams: hasReasoning,
+	})
 
 	projectID, sessionID := extractScopes(r)
-	neverDowngrade := detectOpenAINeverDowngrade(r, rawBody, s.cfg.Routing.NeverDowngrade)
-
-	decision, err := s.guard.Check(r.Context(), projectID, sessionID, neverDowngrade)
+	budgetDec, err := s.guard.Check(r.Context(), projectID, sessionID, routeDec.NeverDowngrade)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "budget check failed")
 		return
 	}
-	if !decision.Allowed {
+	if !budgetDec.Allowed {
 		w.Header().Set("X-Router-Budget-Blocked", "true")
-		writeJSONError(w, http.StatusTooManyRequests, decision.BlockReason)
+		writeJSONError(w, http.StatusTooManyRequests, budgetDec.BlockReason)
 		return
 	}
-	if decision.SoftWarn {
-		w.Header().Set("X-Router-Budget-Warning", decision.WarningMsg)
-	}
-	if decision.Action == "downgrade" && decision.DowngradeTarget != "" {
-		if dp, dpCfg, dm, ok := s.resolveOpenAIProvider(decision.DowngradeTarget); ok {
-			providerName, pCfg, targetModel = dp, dpCfg, dm
-			reqBody = rewriteOpenAIModel(reqBody, targetModel)
-		}
-	} else if targetModel != requestedModel {
-		reqBody = rewriteOpenAIModel(reqBody, targetModel)
+	if budgetDec.SoftWarn {
+		w.Header().Set("X-Router-Budget-Warning", budgetDec.WarningMsg)
 	}
 
-	targetURL := strings.TrimRight(pCfg.BaseURL, "/") + "/chat/completions"
-	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(reqBody))
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "build upstream request failed")
-		return
-	}
-	copyRequestHeaders(r.Header, upReq.Header)
-	if upReq.Header.Get("Authorization") == "" {
-		if key := s.cfg.ResolveAPIKey(providerName); key != "" {
-			upReq.Header.Set("Authorization", "Bearer "+key)
-		}
-	}
-
+	candidates := s.buildCandidates(routeDec, budgetDec)
 	preUpstreamMs := time.Since(start).Milliseconds()
-	resp, err := s.client.Do(upReq)
+
+	resp, winner, fallbackAttempts, err := executeWithFallback(r.Context(), candidates, func(t router.RouteTarget) (*http.Request, error) {
+		pCfg, exists := s.cfg.Providers[t.Provider]
+		if !exists {
+			return nil, fmt.Errorf("provider %q not configured", t.Provider)
+		}
+		bodyToSend := reqBody
+		if t.Model != requestedModel && t.Model != "" {
+			bodyToSend = rewriteOpenAIModel(reqBody, t.Model)
+		}
+		targetURL := strings.TrimRight(pCfg.BaseURL, "/") + "/chat/completions"
+		upReq, reqErr := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(bodyToSend))
+		if reqErr != nil {
+			return nil, reqErr
+		}
+		copyRequestHeaders(r.Header, upReq.Header)
+		if upReq.Header.Get("Authorization") == "" {
+			if key := s.cfg.ResolveAPIKey(t.Provider); key != "" {
+				upReq.Header.Set("Authorization", "Bearer "+key)
+			}
+		}
+		return upReq, nil
+	}, s.client)
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, "upstream request failed: "+err.Error())
 		return
@@ -155,15 +150,18 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	copyResponseHeaders(resp.Header, w.Header())
-	w.Header().Set("X-Router-Provider", providerName)
-	w.Header().Set("X-Router-Model", targetModel)
+	w.Header().Set("X-Router-Provider", winner.Provider)
+	w.Header().Set("X-Router-Model", winner.Model)
+	if routeDec.RuleName != "" {
+		w.Header().Set("X-Router-Rule", routeDec.RuleName)
+	}
 	w.WriteHeader(resp.StatusCode)
 
 	var usage openAIUsage
 	var firstByte time.Time
 
 	if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		firstByte, err = forwardSSE(w, resp.Body, func(payload []byte) {
+		firstByte, _ = forwardSSE(w, resp.Body, func(payload []byte) {
 			var env openAIEnvelope
 			if json.Unmarshal(payload, &env) == nil && env.Usage != nil {
 				usage = *env.Usage
@@ -179,7 +177,6 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 			}
 			_, _ = w.Write(respBytes)
 		}
-		err = readErr
 	}
 
 	totalMs := time.Since(start).Milliseconds()
@@ -188,8 +185,9 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 		ttfbMs = firstByte.Sub(start).Milliseconds()
 	}
 
-	pricing, _ := s.cfg.LookupPricing(providerName, targetModel)
+	pricing, _ := s.cfg.LookupPricing(winner.Provider, winner.Model)
 	cost := telemetry.CalculateCost(pricing, usage.PromptTokens, usage.CompletionTokens, usage.PromptTokensDetails.CachedTokens)
+	baselineCost, savedCost, savedTokens := s.computeSavings("openai", requestedModel, winner.Provider, winner.Model, usage.PromptTokens, usage.CompletionTokens, usage.PromptTokensDetails.CachedTokens, cost)
 
 	_ = s.guard.Record(r.Context(), projectID, sessionID, usage.PromptTokens+usage.CompletionTokens, cost)
 	_ = s.recorder.Record(r.Context(), storage.RequestLog{
@@ -198,8 +196,10 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 		SessionID:        sessionID,
 		APIFormat:        "openai_chat",
 		RequestedModel:   requestedModel,
-		RoutedProvider:   providerName,
-		RoutedModel:      targetModel,
+		RoutedProvider:   winner.Provider,
+		RoutedModel:      winner.Model,
+		RouteRule:        routeDec.RuleName,
+		FallbackAttempts: fallbackAttempts,
 		IsStream:         isStream,
 		StatusCode:       resp.StatusCode,
 		CacheStatus:      "miss",
@@ -207,7 +207,9 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 		CompletionTokens: usage.CompletionTokens,
 		CachedTokens:     usage.PromptTokensDetails.CachedTokens,
 		EstimatedCostUSD: cost,
-		BaselineCostUSD:  cost,
+		BaselineCostUSD:  baselineCost,
+		SavedCostUSD:     savedCost,
+		SavedTokens:      savedTokens,
 		TTFBMs:           ttfbMs,
 		TotalMs:          totalMs,
 		ProxyOverheadMs:  preUpstreamMs,

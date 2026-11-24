@@ -35,12 +35,12 @@
 
 ## Milestone 2 — Policy Routing, Fallback Chains & Full Multi-Provider Support
 **Goal:** Automatically offload mechanical tasks to cheap/local models, recover from `429`/`529` errors transparently, and add OpenAI Responses (Codex) + Anthropic Messages adapters.
-- [ ] Deterministic policy routing engine (headers, model aliases, estimated token threshold, system-prompt regex, tool-call awareness).
-- [ ] Strict `never_downgrade` enforcement across all routing and budget-downgrade paths.
-- [ ] Pre-first-byte `429`/`529`/`5xx` retry & fallback chains across providers.
-- [ ] Cross-protocol translation for local Ollama offload (Gemini Native ↔ Ollama, OpenAI Responses ↔ Ollama).
-- [ ] **OpenAI Responses API (`/v1/responses`)** adapter for Codex CLI.
-- [ ] **Anthropic Messages API (`/v1/messages`)** adapter with Anthropic SSE framing and prompt-cache token accounting.
+- [x] Deterministic policy routing engine (headers, model aliases, estimated token threshold, system-prompt regex, tool-call awareness).
+- [x] Strict `never_downgrade` enforcement across all routing and budget-downgrade paths.
+- [x] Pre-first-byte `429`/`529`/`5xx` retry & fallback chains across providers.
+- [x] Cross-protocol translation for local Ollama offload (Gemini Native ↔ Ollama, OpenAI Responses ↔ Ollama).
+- [x] **OpenAI Responses API (`/v1/responses`)** adapter for Codex CLI.
+- [x] **Anthropic Messages API (`/v1/messages`)** adapter with Anthropic SSE framing and prompt-cache token accounting.
 
 **Exit Criteria:** Mocked `429`/`529` upstreams fail over cleanly before first byte; Gemini & Codex mechanical prompts offload to local Ollama seamlessly.
 
