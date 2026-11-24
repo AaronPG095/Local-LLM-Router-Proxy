@@ -1,0 +1,27 @@
+# Binaries & build artifacts
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Local runtime data & telemetry
+data/
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+
+# Local configuration & secrets
+router.config.yaml
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

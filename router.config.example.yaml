@@ -1,0 +1,83 @@
+server:
+  host: "127.0.0.1"
+  port: 8787
+  connect_timeout_ms: 5000
+  first_byte_timeout_ms: 30000
+
+providers:
+  gemini:
+    type: gemini
+    base_url: "https://generativelanguage.googleapis.com"
+    api_key_env: "GEMINI_API_KEY"
+    pricing_per_1m:
+      gemini-2.5-pro: { input: 1.25, output: 10.00, cached_input: 0.31 }
+      gemini-2.5-flash: { input: 0.15, output: 0.60, cached_input: 0.0375 }
+  openai:
+    type: openai
+    base_url: "https://api.openai.com/v1"
+    api_key_env: "OPENAI_API_KEY"
+    pricing_per_1m:
+      gpt-4o: { input: 2.50, output: 10.00, cached_input: 1.25 }
+      gpt-4o-mini: { input: 0.15, output: 0.60, cached_input: 0.075 }
+  anthropic:
+    type: anthropic
+    base_url: "https://api.anthropic.com/v1"
+    api_key_env: "ANTHROPIC_API_KEY"
+    pricing_per_1m:
+      claude-sonnet-4-20250514: { input: 3.00, output: 15.00, cached_input: 0.30 }
+  ollama:
+    type: openai_compatible
+    base_url: "http://127.0.0.1:11434/v1"
+    pricing_per_1m:
+      qwen2.5-coder:7b: { input: 0.0, output: 0.0 }
+      llama3.2:3b: { input: 0.0, output: 0.0 }
+
+routing:
+  default_target: "gemini:gemini-2.5-flash"
+  never_downgrade:
+    headers:
+      X-Router-Tier: "frontier"
+    model_aliases:
+      - "frontier"
+      - "reasoning"
+    when_reasoning_params_present: true
+  rules:
+    - name: "commit-and-log-trim"
+      match:
+        headers:
+          X-Router-Task: ["commit_msg", "log_trim", "summarize"]
+        has_tools: false
+      target: "ollama:qwen2.5-coder:7b"
+      fallback_chain: ["gemini:gemini-2.5-flash", "openai:gpt-4o-mini"]
+      semantic_cache: true
+
+cache:
+  l1_exact:
+    enabled: true
+    ttl_seconds: 86400
+    max_entries: 10000
+    require_deterministic: true
+  l2_semantic:
+    enabled: false
+    embedding_provider: "ollama:nomic-embed-text"
+    similarity_threshold: 0.94
+    ttl_seconds: 21600
+    max_candidates: 500
+
+budgets:
+  session:
+    max_tokens: 200000
+    max_cost_usd: 2.00
+    soft_warn_pct: 0.80
+    hard_action: "downgrade"
+    downgrade_target: "ollama:qwen2.5-coder:7b"
+  project_daily:
+    max_tokens: 1000000
+    max_cost_usd: 10.00
+    soft_warn_pct: 0.80
+    hard_action: "block"
+
+telemetry:
+  sqlite_path: "./data/router.db"
+  jsonl_path: "./data/telemetry.jsonl"
+  otlp_endpoint: ""
