@@ -60,6 +60,8 @@ func NewServer(cfg *config.Config, store *storage.Store, recorder *telemetry.Rec
 	s.mux.HandleFunc("/metrics/summary", s.handleMetricsSummary)
 	s.mux.HandleFunc("/v1beta/models/", s.handleGemini)
 	s.mux.HandleFunc("/v1/chat/completions", s.handleOpenAIChat)
+	s.mux.HandleFunc("/v1/responses", s.handleOpenAIResponses)
+	s.mux.HandleFunc("/v1/messages", s.handleAnthropicMessages)
 
 	return s
 }
