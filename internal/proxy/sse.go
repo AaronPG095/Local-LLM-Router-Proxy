@@ -45,3 +45,30 @@ func forwardSSE(w http.ResponseWriter, body io.Reader, onDataLine func(payload [
 		}
 	}
 }
+
+// forwardSSETransform reads upstream SSE data lines without forwarding raw bytes,
+// invoking onDataLine for each non-[DONE] payload so callers can emit translated events.
+func forwardSSETransform(body io.Reader, onDataLine func(payload []byte)) (firstByte time.Time, err error) {
+	reader := bufio.NewReaderSize(body, 32*1024)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if len(line) > 0 {
+			trimmed := bytes.TrimSpace(line)
+			if bytes.HasPrefix(trimmed, []byte("data:")) && onDataLine != nil {
+				payload := bytes.TrimSpace(bytes.TrimPrefix(trimmed, []byte("data:")))
+				if len(payload) > 0 && !bytes.Equal(payload, []byte("[DONE]")) {
+					if firstByte.IsZero() {
+						firstByte = time.Now()
+					}
+					onDataLine(payload)
+				}
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return firstByte, nil
+			}
+			return firstByte, readErr
+		}
+	}
+}
