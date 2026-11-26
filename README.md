@@ -22,6 +22,15 @@ go build -o bin/llm-router.exe ./cmd/router
 
 - Health check: `GET http://127.0.0.1:8787/healthz`
 - Live metrics (`TokenHUD`-compatible): `GET http://127.0.0.1:8787/metrics/summary`
+- Cache invalidation: `DELETE http://127.0.0.1:8787/cache` (optional `?namespace=...`)
+- Cache control headers: `X-Router-Cache: bypass | force`, `X-Router-Semantic-Cache: allow`
+
+## Benchmark & Proof Harness
+Run the reproducible benchmark comparing Direct frontier calls vs. Proxied (Routed + L1/L2 Cached) calls:
+
+```powershell
+go run ./bench
+```
 
 ## Documentation
 - [ROADMAP.md](./ROADMAP.md) — Phased milestones (M0 → M3) and current progress
