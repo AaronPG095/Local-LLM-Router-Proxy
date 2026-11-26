@@ -33,11 +33,11 @@ None
 
 ## Acceptance criteria
 
-- [ ] AC1: SQLite `cache_entries` CRUD, TTL expiration, LRU `max_entries` eviction, semantic candidate listing, and `PurgeCache` pass unit tests.
-- [ ] AC2: L1 canonical exact cache and opt-in L2 semantic cache (Ollama embeddings + cosine similarity) pass unit tests, including bypass and `has_tools` guards.
-- [ ] AC3: All 4 proxy handlers support L1/L2 cache lookup, write-through, synthetic SSE frame replay, and `DELETE /cache` invalidation with integration tests.
-- [ ] AC4: Reproducible benchmark harness (`go run ./bench`) outputs Markdown + JSON report showing >0% frontier token savings and <5ms p50 pass-through proxy overhead.
-- [ ] AC5: `ROADMAP.md` and `README.md` updated; `go test -v ./...` and `go build -o bin/llm-router.exe ./cmd/router` pass.
+- [x] AC1: SQLite `cache_entries` CRUD, TTL expiration, LRU `max_entries` eviction, semantic candidate listing, and `PurgeCache` pass unit tests. verified: go test -v ./internal/storage/... passed (2/2 tests)
+- [x] AC2: L1 canonical exact cache and opt-in L2 semantic cache (Ollama embeddings + cosine similarity) pass unit tests, including bypass and `has_tools` guards. verified: go test -v ./internal/cache/... passed (2/2 tests)
+- [x] AC3: All 4 proxy handlers support L1/L2 cache lookup, write-through, synthetic SSE frame replay, and `DELETE /cache` invalidation with integration tests. verified: go test -v ./internal/proxy/... passed (10/10 tests)
+- [x] AC4: Reproducible benchmark harness (`go run ./bench`) outputs Markdown + JSON report showing >0% frontier token savings and <5ms p50 pass-through proxy overhead. verified: go run ./bench: 73.6% frontier tokens saved, 0ms p50 overhead
+- [x] AC5: `ROADMAP.md` and `README.md` updated; `go test -v ./...` and `go build -o bin/llm-router.exe ./cmd/router` pass. verified: go test -v ./... and go build -o bin/llm-router.exe ./cmd/router passed
 
 ## Steps
 
