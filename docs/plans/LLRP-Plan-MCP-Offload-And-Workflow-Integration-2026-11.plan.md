@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: MCP-Offload-And-Workflow-Integration
 ticket: local://LLRP:LLRP-Plan-MCP-Offload-And-Workflow-Integration-2026-11
-status: planned
+status: in-progress
 priority: 
 state: 
 due: 
@@ -10,6 +10,9 @@ version:
 impact: 
 devTicketKey: LLRP:LLRP-Plan-MCP-Offload-And-Workflow-Integration-2026-11
 agent: Gemini
+branch: feat/mcp-offload-tool
+worktree: Local-LLM-Router-Proxy
+startedAt: 2026-11-26
 ---
 # MCP-Offload-And-Workflow-Integration
 
@@ -35,7 +38,7 @@ None
 
 ## Steps
 
-- [ ] Slice 1: Implement pure-Go stdio MCP server (`internal/mcp/`, `cmd/router-mcp/`) and unit tests (AC1)
+- [x] Slice 1: Implement pure-Go stdio MCP server (`internal/mcp/`, `cmd/router-mcp/`) and unit tests (AC1)
 - [ ] Slice 2: Add `scripts/start-proxy.ps1`, `docs/WORKFLOW_INTEGRATION.md`, and update `README.md` (AC2)
 - [ ] Slice 3: Register MCP server globally, verify live stdio + `go test -v ./...`, and complete review/PR (AC3, AC4)
 
