@@ -44,7 +44,7 @@ None
 - [x] Slice 1: Implement SQLite cache storage (`internal/storage/cache.go` + tests) (AC1)
 - [x] Slice 2: Implement L1 exact & opt-in L2 semantic cache engine (`internal/cache/` + tests) (AC2)
 - [x] Slice 3: Integrate cache, synthetic SSE replay, and `DELETE /cache` into proxy (`internal/proxy/` + tests) (AC3)
-- [ ] Slice 4: Create reproducible benchmark & proof harness (`bench/main.go`) (AC4)
+- [x] Slice 4: Create reproducible benchmark & proof harness (`bench/main.go`) (AC4)
 - [ ] Slice 5: Update `ROADMAP.md` and `README.md`, run full verification, and complete review/PR (AC5)
 
 ## Risks
