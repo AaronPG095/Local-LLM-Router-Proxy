@@ -113,6 +113,13 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Router-Budget-Warning", budgetDec.WarningMsg)
 	}
 
+	lookupReq := s.buildCacheLookupReq(r, projectID, "gemini_native", routeDec, isStream, hasTools, reqBody)
+	lookupRes, _ := s.cache.Lookup(r.Context(), lookupReq)
+	if lookupRes.Hit {
+		s.serveCacheHit(r.Context(), w, start, projectID, sessionID, "gemini_native", "gemini", model, routeDec, lookupRes)
+		return
+	}
+
 	candidates := s.buildCandidates(routeDec, budgetDec)
 	preUpstreamMs := time.Since(start).Milliseconds()
 
@@ -182,10 +189,12 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 
 	var usage geminiUsageMetadata
 	var firstByte time.Time
+	var capturedBody []byte
 
 	if translated {
 		if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 			flusher, _ := w.(http.Flusher)
+			var capBuf bytes.Buffer
 			firstByte, _ = forwardSSETransform(resp.Body, func(payload []byte) {
 				gemChunk, u := openAISSEChunkToGemini(payload)
 				if u != nil {
@@ -195,12 +204,17 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 					if firstByte.IsZero() {
 						firstByte = time.Now()
 					}
-					_, _ = fmt.Fprintf(w, "data: %s\n\n", gemChunk)
+					line := fmt.Sprintf("data: %s\n\n", gemChunk)
+					_, _ = io.WriteString(w, line)
+					if capBuf.Len()+len(line) <= defaultMaxCaptureBytes {
+						capBuf.WriteString(line)
+					}
 					if flusher != nil {
 						flusher.Flush()
 					}
 				}
 			})
+			capturedBody = capBuf.Bytes()
 		} else {
 			respBytes, readErr := io.ReadAll(resp.Body)
 			firstByte = time.Now()
@@ -208,6 +222,7 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 				gemBytes, u, convErr := openAIToGeminiResponse(respBytes)
 				if convErr == nil {
 					usage = u
+					capturedBody = gemBytes
 					_, _ = w.Write(gemBytes)
 				} else {
 					_, _ = w.Write(respBytes)
@@ -218,7 +233,7 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-			firstByte, _ = forwardSSE(w, resp.Body, func(payload []byte) {
+			firstByte, capturedBody, _ = forwardSSEWithCapture(w, resp.Body, defaultMaxCaptureBytes, func(payload []byte) {
 				var env geminiUsageEnvelope
 				if json.Unmarshal(payload, &env) == nil && env.UsageMetadata != nil {
 					usage = *env.UsageMetadata
@@ -232,6 +247,9 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 				if json.Unmarshal(respBytes, &env) == nil && env.UsageMetadata != nil {
 					usage = *env.UsageMetadata
 				}
+				if resp.StatusCode == http.StatusOK {
+					capturedBody = respBytes
+				}
 				_, _ = w.Write(respBytes)
 			}
 		}
@@ -244,6 +262,9 @@ func (s *Server) handleGemini(w http.ResponseWriter, r *http.Request) {
 	}
 
 	completionTokens := usage.CandidatesTokenCount + usage.ThoughtsTokenCount
+	if resp.StatusCode == http.StatusOK && len(capturedBody) > 0 {
+		s.storeCacheResponse(r.Context(), lookupReq, lookupRes, w.Header().Get("Content-Type"), capturedBody, usage.PromptTokenCount, completionTokens)
+	}
 	pricing, _ := s.cfg.LookupPricing(winner.Provider, winner.Model)
 	cost := telemetry.CalculateCost(pricing, usage.PromptTokenCount, completionTokens, usage.CachedContentTokenCount)
 	baselineCost, savedCost, savedTokens := s.computeSavings("gemini", model, winner.Provider, winner.Model, usage.PromptTokenCount, completionTokens, usage.CachedContentTokenCount, cost)

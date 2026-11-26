@@ -118,6 +118,13 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Router-Budget-Warning", budgetDec.WarningMsg)
 	}
 
+	lookupReq := s.buildCacheLookupReq(r, projectID, "openai_chat", routeDec, isStream, hasTools, rawBody)
+	lookupRes, _ := s.cache.Lookup(r.Context(), lookupReq)
+	if lookupRes.Hit {
+		s.serveCacheHit(r.Context(), w, start, projectID, sessionID, "openai_chat", "openai", requestedModel, routeDec, lookupRes)
+		return
+	}
+
 	candidates := s.buildCandidates(routeDec, budgetDec)
 	preUpstreamMs := time.Since(start).Milliseconds()
 
@@ -159,9 +166,10 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 
 	var usage openAIUsage
 	var firstByte time.Time
+	var capturedBody []byte
 
 	if isStream && resp.StatusCode == http.StatusOK && strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		firstByte, _ = forwardSSE(w, resp.Body, func(payload []byte) {
+		firstByte, capturedBody, _ = forwardSSEWithCapture(w, resp.Body, defaultMaxCaptureBytes, func(payload []byte) {
 			var env openAIEnvelope
 			if json.Unmarshal(payload, &env) == nil && env.Usage != nil {
 				usage = *env.Usage
@@ -175,6 +183,9 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 			if json.Unmarshal(respBytes, &env) == nil && env.Usage != nil {
 				usage = *env.Usage
 			}
+			if resp.StatusCode == http.StatusOK {
+				capturedBody = respBytes
+			}
 			_, _ = w.Write(respBytes)
 		}
 	}
@@ -183,6 +194,10 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	ttfbMs := totalMs
 	if !firstByte.IsZero() {
 		ttfbMs = firstByte.Sub(start).Milliseconds()
+	}
+
+	if resp.StatusCode == http.StatusOK && len(capturedBody) > 0 {
+		s.storeCacheResponse(r.Context(), lookupReq, lookupRes, w.Header().Get("Content-Type"), capturedBody, usage.PromptTokens, usage.CompletionTokens)
 	}
 
 	pricing, _ := s.cfg.LookupPricing(winner.Provider, winner.Model)

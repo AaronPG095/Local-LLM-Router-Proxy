@@ -509,3 +509,187 @@ func TestAnthropicMessagesSSEAnd529Fallback(t *testing.T) {
 		t.Fatalf("unexpected anthropic usage summary: %+v", sum)
 	}
 }
+
+func TestL1CacheHitNonStreamAndSSEReplay(t *testing.T) {
+	var upstreamCalls int
+	geminiMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if strings.HasSuffix(r.URL.Path, ":streamGenerateContent") {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"cached-sse\"}]}}]}\n\n"))
+			_, _ = w.Write([]byte("data: {\"usageMetadata\":{\"promptTokenCount\":30,\"candidatesTokenCount\":10}}\n\n"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"cached-json"}]}}],"usageMetadata":{"promptTokenCount":40,"candidatesTokenCount":12}}`))
+	}))
+	defer geminiMock.Close()
+
+	dir := t.TempDir()
+	store, err := storage.Open(filepath.Join(dir, "router.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	rec, _ := telemetry.NewRecorder(store, filepath.Join(dir, "telemetry.jsonl"))
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{ConnectTimeoutMs: 2000, FirstByteTimeoutMs: 5000},
+		Providers: map[string]config.ProviderConfig{
+			"gemini": {
+				Type:    "gemini",
+				BaseURL: geminiMock.URL,
+				PricingPer1M: map[string]config.ModelPricing{
+					"gemini-2.5-flash": {Input: 0.15, Output: 0.60},
+				},
+			},
+		},
+		Cache: config.CacheConfig{
+			L1Exact: config.L1CacheConfig{
+				Enabled:              true,
+				TTLSeconds:           3600,
+				MaxEntries:           100,
+				RequireDeterministic: true,
+			},
+		},
+		Budgets: config.BudgetsConfig{
+			Session:      config.BudgetScopeConfig{MaxTokens: 100000, SoftWarnPct: 0.8, HardAction: "block"},
+			ProjectDaily: config.BudgetScopeConfig{MaxTokens: 100000, SoftWarnPct: 0.8, HardAction: "block"},
+		},
+	}
+
+	srv := NewServer(cfg, store, rec, budget.NewGuard(store, cfg.Budgets))
+	proxyTS := httptest.NewServer(srv.Handler())
+	defer proxyTS.Close()
+
+	// 1. Non-stream miss then L1 hit
+	payload := `{"generationConfig":{"temperature":0},"contents":[{"parts":[{"text":"ping"}]}]}`
+	r1, _ := http.Post(proxyTS.URL+"/v1beta/models/gemini-2.5-flash:generateContent", "application/json", strings.NewReader(payload))
+	r1.Body.Close()
+	r2, _ := http.Post(proxyTS.URL+"/v1beta/models/gemini-2.5-flash:generateContent", "application/json", strings.NewReader(payload))
+	b2, _ := io.ReadAll(r2.Body)
+	r2.Body.Close()
+
+	if r2.Header.Get("X-Router-Cache") != "l1_hit" || !strings.Contains(string(b2), "cached-json") {
+		t.Fatalf("expected l1_hit for non-stream, got header=%q body=%s", r2.Header.Get("X-Router-Cache"), string(b2))
+	}
+
+	// 2. Streaming SSE miss then L1 SSE replay
+	s1, _ := http.Post(proxyTS.URL+"/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", "application/json", strings.NewReader(payload))
+	s1.Body.Close()
+	s2, _ := http.Post(proxyTS.URL+"/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse", "application/json", strings.NewReader(payload))
+	sb2, _ := io.ReadAll(s2.Body)
+	s2.Body.Close()
+
+	if s2.Header.Get("X-Router-Cache") != "l1_hit" || !strings.Contains(string(sb2), "cached-sse") {
+		t.Fatalf("expected l1_hit SSE replay, got header=%q body=%s", s2.Header.Get("X-Router-Cache"), string(sb2))
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("expected 2 upstream calls (1 non-stream + 1 SSE), got %d", upstreamCalls)
+	}
+
+	// 3. Bypass header hits upstream
+	reqBypass, _ := http.NewRequest(http.MethodPost, proxyTS.URL+"/v1beta/models/gemini-2.5-flash:generateContent", strings.NewReader(payload))
+	reqBypass.Header.Set("Content-Type", "application/json")
+	reqBypass.Header.Set("X-Router-Cache", "bypass")
+	rb, _ := http.DefaultClient.Do(reqBypass)
+	rb.Body.Close()
+	if upstreamCalls != 3 {
+		t.Fatalf("expected 3 upstream calls after bypass, got %d", upstreamCalls)
+	}
+}
+
+func TestL2SemanticCacheOptInAndInvalidation(t *testing.T) {
+	var chatCalls int
+	ollamaMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/embeddings" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"embedding": []float32{1.0, 0.0, 0.0}}},
+			})
+			return
+		}
+		if r.URL.Path == "/v1/chat/completions" {
+			chatCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"semantic-ok"}}],"usage":{"prompt_tokens":20,"completion_tokens":5}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ollamaMock.Close()
+
+	dir := t.TempDir()
+	store, err := storage.Open(filepath.Join(dir, "router.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	rec, _ := telemetry.NewRecorder(store, filepath.Join(dir, "telemetry.jsonl"))
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{ConnectTimeoutMs: 2000, FirstByteTimeoutMs: 5000},
+		Providers: map[string]config.ProviderConfig{
+			"ollama": {Type: "openai_compatible", BaseURL: ollamaMock.URL + "/v1"},
+		},
+		Routing: config.RoutingConfig{
+			Rules: []config.RoutingRule{
+				{
+					Name:          "optin-summary",
+					Match:         config.MatchRule{Headers: map[string][]string{"X-Router-Task": {"summarize"}}, HasTools: boolPtr(false)},
+					Target:        "ollama:qwen2.5-coder:7b",
+					SemanticCache: true,
+				},
+			},
+		},
+		Cache: config.CacheConfig{
+			L1Exact: config.L1CacheConfig{Enabled: true, TTLSeconds: 3600, MaxEntries: 100, RequireDeterministic: true},
+			L2Semantic: config.L2CacheConfig{
+				Enabled:             false,
+				EmbeddingProvider:   "ollama:nomic-embed-text",
+				SimilarityThreshold: 0.94,
+				TTLSeconds:          3600,
+				MaxCandidates:       50,
+			},
+		},
+		Budgets: config.BudgetsConfig{
+			Session:      config.BudgetScopeConfig{MaxTokens: 100000, SoftWarnPct: 0.8, HardAction: "block"},
+			ProjectDaily: config.BudgetScopeConfig{MaxTokens: 100000, SoftWarnPct: 0.8, HardAction: "block"},
+		},
+	}
+
+	srv := NewServer(cfg, store, rec, budget.NewGuard(store, cfg.Budgets))
+	proxyTS := httptest.NewServer(srv.Handler())
+	defer proxyTS.Close()
+
+	// 1. Opt-in request 1 (miss, stores embedding)
+	req1, _ := http.NewRequest(http.MethodPost, proxyTS.URL+"/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","temperature":0.5,"messages":[{"role":"user","content":"summarize A"}]}`))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("X-Router-Task", "summarize")
+	r1, _ := http.DefaultClient.Do(req1)
+	r1.Body.Close()
+
+	// 2. Opt-in request 2 with different text -> L2 hit
+	req2, _ := http.NewRequest(http.MethodPost, proxyTS.URL+"/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","temperature":0.5,"messages":[{"role":"user","content":"summarize B"}]}`))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("X-Router-Task", "summarize")
+	r2, _ := http.DefaultClient.Do(req2)
+	r2.Body.Close()
+	if r2.Header.Get("X-Router-Cache") != "l2_hit" || chatCalls != 1 {
+		t.Fatalf("expected l2_hit and chatCalls=1, got header=%q chatCalls=%d", r2.Header.Get("X-Router-Cache"), chatCalls)
+	}
+
+	// 3. DELETE /cache purges entries
+	delReq, _ := http.NewRequest(http.MethodDelete, proxyTS.URL+"/cache", nil)
+	delResp, err := http.DefaultClient.Do(delReq)
+	if err != nil || delResp.StatusCode != 200 {
+		t.Fatalf("DELETE /cache failed: err=%v status=%d", err, delResp.StatusCode)
+	}
+	var delOut struct {
+		Deleted int64 `json:"deleted"`
+	}
+	_ = json.NewDecoder(delResp.Body).Decode(&delOut)
+	delResp.Body.Close()
+	if delOut.Deleted != 1 {
+		t.Fatalf("expected deleted=1, got %d", delOut.Deleted)
+	}
+}
