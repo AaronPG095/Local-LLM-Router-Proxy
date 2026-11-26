@@ -16,7 +16,7 @@ If `llm-router.exe` is already listening on `http://127.0.0.1:8787/healthz`, the
 ---
 
 ## 2. Antigravity IDE (Universal Across All Repos)
-Antigravity loads MCP servers globally from `C:\Users\Aaron\.gemini\antigravity\mcp_config.json`.
+Antigravity loads MCP servers globally from `%USERPROFILE%\.gemini\antigravity\mcp_config.json`.
 Register `bin\llm-router-mcp.exe` once:
 
 ```json
