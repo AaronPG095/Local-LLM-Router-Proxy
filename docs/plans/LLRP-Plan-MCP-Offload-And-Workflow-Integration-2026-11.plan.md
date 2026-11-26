@@ -23,12 +23,12 @@ reviewFingerprint: 6df9e50f7e479422800e0e27d10c134ade5d06f7bf816701e310adc30e6d2
 
 ## Summary
 
-Add a pure-Go stdio MCP server (`bin/llm-router-mcp.exe`) exposing `offload_llm`, `router_metrics`, and `router_cache_purge` backed by `http://127.0.0.1:8787`, plus a `scripts/start-proxy.ps1` launcher, `docs/WORKFLOW_INTEGRATION.md`, and universal registration in `C:\Users\Aaron\.gemini\antigravity\mcp_config.json`.
+Add a pure-Go stdio MCP server (`bin/llm-router-mcp.exe`) exposing `offload_llm`, `router_metrics`, and `router_cache_purge` backed by `http://127.0.0.1:8787`, plus a `scripts/start-proxy.ps1` launcher, `docs/WORKFLOW_INTEGRATION.md`, and universal registration in `%USERPROFILE%\.gemini\antigravity\mcp_config.json`.
 
 ## Context
 
 - `llm-router.exe` already serves `/v1/chat/completions`, `/metrics/summary`, and `DELETE /cache` on `127.0.0.1:8787`.
-- CLI tools (Codex, Claude Code, Gemini CLI) connect directly via `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `GEMINI_API_BASE_URL`, whereas Antigravity IDE uses global MCP tools from `C:\Users\Aaron\.gemini\antigravity\mcp_config.json` across all repos.
+- CLI tools (Codex, Claude Code, Gemini CLI) connect directly via `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `GEMINI_API_BASE_URL`, whereas Antigravity IDE uses global MCP tools from `%USERPROFILE%\.gemini\antigravity\mcp_config.json` across all repos.
 
 ## Open questions
 
@@ -38,7 +38,7 @@ None
 
 - [x] AC1: Pure-Go stdio MCP server (`internal/mcp`, `cmd/router-mcp`) passes unit tests for `initialize`, `tools/list`, `offload_llm`, `router_metrics`, and `router_cache_purge`. verified: go test -v ./internal/mcp/... passed
 - [x] AC2: `scripts/start-proxy.ps1` and `docs/WORKFLOW_INTEGRATION.md` + `README.md` document universal Antigravity MCP + Codex/Claude/Gemini CLI integration. verified: scripts/start-proxy.ps1, docs/WORKFLOW_INTEGRATION.md, and README.md added
-- [x] AC3: `bin/llm-router-mcp.exe` builds cleanly, responds to live stdio `initialize` + `tools/list`, and is registered in `C:\Users\Aaron\.gemini\antigravity\mcp_config.json`. verified: bin/llm-router-mcp.exe built, stdio initialize/tools/list verified, registered in mcp_config.json
+- [x] AC3: `bin/llm-router-mcp.exe` builds cleanly, responds to live stdio `initialize` + `tools/list`, and is registered in `%USERPROFILE%\.gemini\antigravity\mcp_config.json`. verified: bin/llm-router-mcp.exe built, stdio initialize/tools/list verified, registered in mcp_config.json
 - [x] AC4: Full `go test -v ./...` and `go build` pass on branch and after merge to `main`. verified: go test -v ./... and go build passed
 
 ## Steps
@@ -62,7 +62,7 @@ Approved MCP Offload & Workflow Integration Plan:
 > 1. Workflow (`adw`): `adw new "MCP-Offload-And-Workflow-Integration"` -> `adw create --agent Gemini` -> branch `feat/mcp-offload-tool` -> `adw start` -> incremental commits + `adw tick` -> `adw pack --test` + independent review -> `adw check` -> PR #4 & merge.
 > 2. Slice 1 — Pure-Go Stdio MCP Server (`internal/mcp/` + `cmd/router-mcp/main.go`) exposing `offload_llm`, `router_metrics`, `router_cache_purge`.
 > 3. Slice 2 — Workflow Integration Scripts & Docs (`scripts/start-proxy.ps1`, `docs/WORKFLOW_INTEGRATION.md`, `README.md`).
-> 4. Slice 3 — Live Registration in `C:\Users\Aaron\.gemini\antigravity\mcp_config.json` & Verification.
+> 4. Slice 3 — Live Registration in `%USERPROFILE%\.gemini\antigravity\mcp_config.json` & Verification.
 
 ## Progress log
 
