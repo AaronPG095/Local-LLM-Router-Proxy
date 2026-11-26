@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: M3-Cache-And-Benchmark
 ticket: local://LLRP:LLRP-Plan-M3-Cache-And-Benchmark-2026-11
-status: planned
+status: in-progress
 priority: 
 state: 
 due: 
@@ -10,6 +10,9 @@ version:
 impact: 
 devTicketKey: LLRP:LLRP-Plan-M3-Cache-And-Benchmark-2026-11
 agent: Gemini
+branch: feat/m3-cache-and-benchmark
+worktree: Local-LLM-Router-Proxy
+startedAt: 2026-11-26
 ---
 # M3-Cache-And-Benchmark
 
@@ -38,7 +41,7 @@ None
 
 ## Steps
 
-- [ ] Slice 1: Implement SQLite cache storage (`internal/storage/cache.go` + tests) (AC1)
+- [x] Slice 1: Implement SQLite cache storage (`internal/storage/cache.go` + tests) (AC1)
 - [ ] Slice 2: Implement L1 exact & opt-in L2 semantic cache engine (`internal/cache/` + tests) (AC2)
 - [ ] Slice 3: Integrate cache, synthetic SSE replay, and `DELETE /cache` into proxy (`internal/proxy/` + tests) (AC3)
 - [ ] Slice 4: Create reproducible benchmark & proof harness (`bench/main.go`) (AC4)
