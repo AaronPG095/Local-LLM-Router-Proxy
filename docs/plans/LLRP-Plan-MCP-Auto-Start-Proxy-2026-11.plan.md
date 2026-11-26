@@ -33,12 +33,12 @@ None
 
 - [x] AC1: Cross-platform detached spawner (`proc_windows.go`, `proc_other.go`) and `EnsureProxyRunning` pass unit tests (`internal/mcp/autostart_test.go`). verified: go test -v ./internal/mcp/... passed (3/3 tests)
 - [x] AC2: `cmd/router-mcp/main.go` and `internal/mcp/server.go` trigger `EnsureProxyRunning` on startup and before tool calls; `go test -v ./...` passes. verified: go test -v ./... passed
-- [ ] AC3: `bin/llm-router-mcp.exe` builds cleanly and live stdio `initialize` + `router_metrics` auto-starts `llm-router.exe` on `127.0.0.1:8787`.
+- [x] AC3: `bin/llm-router-mcp.exe` builds cleanly and live stdio `initialize` + `router_metrics` auto-starts `llm-router.exe` on `127.0.0.1:8787`. verified: bin/llm-router-mcp.exe built and auto-started llm-router.exe on 127.0.0.1:8787
 
 ## Steps
 
 - [x] Step 1: Implement detached spawner, `EnsureProxyRunning`, startup + tool hooks, and unit tests (AC1, AC2)
-- [ ] Step 2: Rebuild `bin/llm-router-mcp.exe`, verify live auto-start, and complete review/PR (AC3)
+- [x] Step 2: Rebuild `bin/llm-router-mcp.exe`, verify live auto-start, and complete review/PR (AC3)
 
 ## Risks
 
