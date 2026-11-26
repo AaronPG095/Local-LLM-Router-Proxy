@@ -31,16 +31,16 @@ None
 
 ## Acceptance criteria
 
-- [ ] AC1: Pure-Go stdio MCP server (`internal/mcp`, `cmd/router-mcp`) passes unit tests for `initialize`, `tools/list`, `offload_llm`, `router_metrics`, and `router_cache_purge`.
-- [ ] AC2: `scripts/start-proxy.ps1` and `docs/WORKFLOW_INTEGRATION.md` + `README.md` document universal Antigravity MCP + Codex/Claude/Gemini CLI integration.
-- [ ] AC3: `bin/llm-router-mcp.exe` builds cleanly, responds to live stdio `initialize` + `tools/list`, and is registered in `C:\Users\Aaron\.gemini\antigravity\mcp_config.json`.
-- [ ] AC4: Full `go test -v ./...` and `go build` pass on branch and after merge to `main`.
+- [x] AC1: Pure-Go stdio MCP server (`internal/mcp`, `cmd/router-mcp`) passes unit tests for `initialize`, `tools/list`, `offload_llm`, `router_metrics`, and `router_cache_purge`. verified: go test -v ./internal/mcp/... passed
+- [x] AC2: `scripts/start-proxy.ps1` and `docs/WORKFLOW_INTEGRATION.md` + `README.md` document universal Antigravity MCP + Codex/Claude/Gemini CLI integration. verified: scripts/start-proxy.ps1, docs/WORKFLOW_INTEGRATION.md, and README.md added
+- [x] AC3: `bin/llm-router-mcp.exe` builds cleanly, responds to live stdio `initialize` + `tools/list`, and is registered in `C:\Users\Aaron\.gemini\antigravity\mcp_config.json`. verified: bin/llm-router-mcp.exe built, stdio initialize/tools/list verified, registered in mcp_config.json
+- [x] AC4: Full `go test -v ./...` and `go build` pass on branch and after merge to `main`. verified: go test -v ./... and go build passed
 
 ## Steps
 
 - [x] Slice 1: Implement pure-Go stdio MCP server (`internal/mcp/`, `cmd/router-mcp/`) and unit tests (AC1)
 - [x] Slice 2: Add `scripts/start-proxy.ps1`, `docs/WORKFLOW_INTEGRATION.md`, and update `README.md` (AC2)
-- [ ] Slice 3: Register MCP server globally, verify live stdio + `go test -v ./...`, and complete review/PR (AC3, AC4)
+- [x] Slice 3: Register MCP server globally, verify live stdio + `go test -v ./...`, and complete review/PR (AC3, AC4)
 
 ## Risks
 
