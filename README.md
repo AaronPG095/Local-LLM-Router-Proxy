@@ -17,13 +17,15 @@ $env:GEMINI_API_KEY = "your-key"
 
 # 2. Build and run
 go build -o bin/llm-router.exe ./cmd/router
-.\bin\llm-router.exe -config router.config.yaml
+go build -o bin/llm-router-mcp.exe ./cmd/router-mcp
+.\scripts\start-proxy.ps1
 ```
 
 - Health check: `GET http://127.0.0.1:8787/healthz`
 - Live metrics (`TokenHUD`-compatible): `GET http://127.0.0.1:8787/metrics/summary`
 - Cache invalidation: `DELETE http://127.0.0.1:8787/cache` (optional `?namespace=...`)
 - Cache control headers: `X-Router-Cache: bypass | force`, `X-Router-Semantic-Cache: allow`
+- Universal Antigravity MCP + Codex/Claude/Gemini CLI setup: [docs/WORKFLOW_INTEGRATION.md](./docs/WORKFLOW_INTEGRATION.md)
 
 ## Benchmark & Proof Harness
 Run the reproducible benchmark comparing Direct frontier calls vs. Proxied (Routed + L1/L2 Cached) calls:

@@ -39,7 +39,7 @@ None
 ## Steps
 
 - [x] Slice 1: Implement pure-Go stdio MCP server (`internal/mcp/`, `cmd/router-mcp/`) and unit tests (AC1)
-- [ ] Slice 2: Add `scripts/start-proxy.ps1`, `docs/WORKFLOW_INTEGRATION.md`, and update `README.md` (AC2)
+- [x] Slice 2: Add `scripts/start-proxy.ps1`, `docs/WORKFLOW_INTEGRATION.md`, and update `README.md` (AC2)
 - [ ] Slice 3: Register MCP server globally, verify live stdio + `go test -v ./...`, and complete review/PR (AC3, AC4)
 
 ## Risks
