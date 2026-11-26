@@ -48,8 +48,8 @@
 
 ## Milestone 3 — L1 Exact Cache, Opt-In L2 Semantic Cache & Benchmark Harness
 **Goal:** Eliminate redundant calls with local caching and prove token/cost/latency savings with a reproducible benchmark suite.
-- [ ] L1 Exact/Prefix Cache (SHA-256 canonicalized request tuple) with synthetic **SSE frame replay** for streaming clients.
-- [ ] Opt-in L2 Semantic Cache (local Ollama embeddings + cosine similarity + namespace isolation + TTL + manual invalidation endpoint).
-- [ ] Reproducible Benchmark & Proof Harness (`bench/`): compares direct API calls vs. routed + cached workload, reporting cache hit rate, p50/p95 latency overhead (ms), and % frontier tokens/cost saved.
+- [x] L1 Exact/Prefix Cache (SHA-256 canonicalized request tuple) with synthetic **SSE frame replay** for streaming clients.
+- [x] Opt-in L2 Semantic Cache (local Ollama embeddings + cosine similarity + namespace isolation + TTL + manual invalidation endpoint).
+- [x] Reproducible Benchmark & Proof Harness (`bench/`): compares direct API calls vs. routed + cached workload, reporting cache hit rate, p50/p95 latency overhead (ms), and % frontier tokens/cost saved.
 
 **Exit Criteria:** Benchmark script produces reproducible markdown/JSON report demonstrating >0% frontier token savings with <5ms p50 proxy overhead on pass-through.
