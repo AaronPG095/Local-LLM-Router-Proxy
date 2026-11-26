@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: MCP-Auto-Start-Proxy
 ticket: local://LLRP:LLRP-Plan-MCP-Auto-Start-Proxy-2026-11
-status: planned
+status: in-progress
 priority: 
 state: 
 due: 
@@ -10,6 +10,9 @@ version:
 impact: 
 devTicketKey: LLRP:LLRP-Plan-MCP-Auto-Start-Proxy-2026-11
 agent: Gemini
+branch: feat/mcp-auto-start-proxy
+worktree: Local-LLM-Router-Proxy
+startedAt: 2026-11-26
 ---
 # MCP-Auto-Start-Proxy
 
@@ -28,13 +31,13 @@ None
 
 ## Acceptance criteria
 
-- [ ] AC1: Cross-platform detached spawner (`proc_windows.go`, `proc_other.go`) and `EnsureProxyRunning` pass unit tests (`internal/mcp/autostart_test.go`).
-- [ ] AC2: `cmd/router-mcp/main.go` and `internal/mcp/server.go` trigger `EnsureProxyRunning` on startup and before tool calls; `go test -v ./...` passes.
+- [x] AC1: Cross-platform detached spawner (`proc_windows.go`, `proc_other.go`) and `EnsureProxyRunning` pass unit tests (`internal/mcp/autostart_test.go`). verified: go test -v ./internal/mcp/... passed (3/3 tests)
+- [x] AC2: `cmd/router-mcp/main.go` and `internal/mcp/server.go` trigger `EnsureProxyRunning` on startup and before tool calls; `go test -v ./...` passes. verified: go test -v ./... passed
 - [ ] AC3: `bin/llm-router-mcp.exe` builds cleanly and live stdio `initialize` + `router_metrics` auto-starts `llm-router.exe` on `127.0.0.1:8787`.
 
 ## Steps
 
-- [ ] Step 1: Implement detached spawner, `EnsureProxyRunning`, startup + tool hooks, and unit tests (AC1, AC2)
+- [x] Step 1: Implement detached spawner, `EnsureProxyRunning`, startup + tool hooks, and unit tests (AC1, AC2)
 - [ ] Step 2: Rebuild `bin/llm-router-mcp.exe`, verify live auto-start, and complete review/PR (AC3)
 
 ## Risks

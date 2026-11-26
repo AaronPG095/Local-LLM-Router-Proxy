@@ -10,14 +10,17 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Server implements a newline-delimited JSON-RPC 2.0 stdio MCP server
 // backed by the local LLM Router Proxy HTTP endpoints.
 type Server struct {
-	routerURL string
-	client    *http.Client
+	routerURL    string
+	client       *http.Client
+	startMu      sync.Mutex
+	startProxyFn func() error
 }
 
 // NewServer constructs an MCP Server targeting routerURL (default http://127.0.0.1:8787).
@@ -26,10 +29,12 @@ func NewServer(routerURL string) *Server {
 	if u == "" {
 		u = "http://127.0.0.1:8787"
 	}
-	return &Server{
+	s := &Server{
 		routerURL: u,
 		client:    &http.Client{Timeout: 65 * time.Second},
 	}
+	s.startProxyFn = s.defaultStartProxy
+	return s
 }
 
 type rpcRequest struct {
@@ -216,6 +221,7 @@ func (s *Server) callTool(ctx context.Context, name string, rawArgs json.RawMess
 }
 
 func (s *Server) callOffloadLLM(ctx context.Context, rawArgs json.RawMessage) map[string]any {
+	_ = s.EnsureProxyRunning(ctx)
 	var args struct {
 		Task          string `json:"task"`
 		Prompt        string `json:"prompt"`
@@ -289,6 +295,7 @@ func (s *Server) callOffloadLLM(ctx context.Context, rawArgs json.RawMessage) ma
 }
 
 func (s *Server) callRouterMetrics(ctx context.Context) map[string]any {
+	_ = s.EnsureProxyRunning(ctx)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.routerURL+"/metrics/summary", nil)
 	if err != nil {
 		return mcpError(err.Error())
@@ -311,6 +318,7 @@ func (s *Server) callRouterMetrics(ctx context.Context) map[string]any {
 }
 
 func (s *Server) callRouterCachePurge(ctx context.Context, rawArgs json.RawMessage) map[string]any {
+	_ = s.EnsureProxyRunning(ctx)
 	var args struct {
 		Namespace string `json:"namespace"`
 	}
