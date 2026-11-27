@@ -17,11 +17,15 @@ func shouldCompress(r *http.Request, cfg config.CompressionConfig) bool {
 }
 
 func trimText(s string, minChars, headChars, tailChars int) (string, int, bool) {
-	if len(s) <= minChars || headChars+tailChars >= len(s) {
+	if minChars < 0 || headChars < 0 || tailChars < 0 {
 		return s, 0, false
 	}
-	trimmedCount := len(s) - headChars - tailChars
-	out := fmt.Sprintf("%s\n...[trimmed %d chars by llm-router]...\n%s", s[:headChars], trimmedCount, s[len(s)-tailChars:])
+	runes := []rune(s)
+	if len(runes) <= minChars || headChars+tailChars >= len(runes) {
+		return s, 0, false
+	}
+	trimmedCount := len(runes) - headChars - tailChars
+	out := fmt.Sprintf("%s\n...[trimmed %d chars by llm-router]...\n%s", string(runes[:headChars]), trimmedCount, string(runes[len(runes)-tailChars:]))
 	return out, trimmedCount, true
 }
 

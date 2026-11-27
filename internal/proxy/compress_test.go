@@ -106,3 +106,11 @@ func TestTrimOldAnthropicToolResultsAndInjectCacheControl(t *testing.T) {
 		t.Fatalf("expected cache_control only on final tool, got %+v", parsed.Tools)
 	}
 }
+
+func TestTrimTextUTF8AndBypassHeader(t *testing.T) {
+	s := strings.Repeat("─", 60) + strings.Repeat("🚀", 60)
+	trimmed, saved, did := trimText(s, 50, 10, 10)
+	if !did || saved != 100 || strings.ContainsRune(trimmed, '\ufffd') {
+		t.Fatalf("expected clean UTF-8 rune trim, got did=%v saved=%d trimmed=%q", did, saved, trimmed)
+	}
+}
