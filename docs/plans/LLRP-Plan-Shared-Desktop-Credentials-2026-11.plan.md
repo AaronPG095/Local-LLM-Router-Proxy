@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: Shared Desktop Credentials
 ticket: local://LLRP:LLRP-Plan-Shared-Desktop-Credentials-2026-11
-status: in-progress
+status: shipped
 priority: 
 state: 
 due: 
@@ -19,6 +19,7 @@ reviewVerdict: warn
 reviewSession: /root/desktop_credentials_review
 baseBranch: main
 reviewFingerprint: 4a13040d149bceb1c90acb74c1f6110403f306e55488a46245a9f6680a6a9d32
+pr: https://github.com/AaronPG095/Local-LLM-Router-Proxy/pull/10
 ---
 # Shared Desktop Credentials
 
