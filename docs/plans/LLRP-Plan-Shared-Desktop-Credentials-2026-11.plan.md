@@ -5,7 +5,7 @@ status: in-progress
 priority: 
 state: 
 due: 
-appetite: M
+appetite: L
 version: 
 impact: 
 blueprint: docs/architecture/LLRP-Blueprint-Desktop-Client-Integration.md
@@ -14,6 +14,11 @@ agent: Codex
 branch: feat/shared-desktop-credentials
 worktree: Local-LLM-Router-Proxy
 startedAt: 2026-11-27
+reviewedBy: Codex
+reviewVerdict: warn
+reviewSession: /root/desktop_credentials_review
+baseBranch: main
+reviewFingerprint: 4a13040d149bceb1c90acb74c1f6110403f306e55488a46245a9f6680a6a9d32
 ---
 # Shared Desktop Credentials
 
@@ -57,6 +62,10 @@ Approved plan:
 
 > Keep the existing Windows-encrypted store and make the router itself load the keys once at startup. Include a cold-start benchmark.
 
+The Windows-specific reader, portable fallback, dedicated Windows rotation test, and CI matrix exceed the medium file limit without expanding the approved functionality.
+
 ## Progress log
 
 <!-- One line per session/review, added with `ticket.mjs log` or `ticket.mjs review` -->
+- 2026-11-27 13:34 UTC, Codex (review: warn): Independent tests and plan passed; custom configs can direct a resolved credential to an alternate upstream, so the setup guide now documents trusted configs and dummy credentials for mocks. [reviewer: /root/desktop_credentials_review]
+- 2026-11-27 13:34 UTC, Codex (handoff): Done: Windows credential loading, rotation, mock cold-start timing, and independent review completed; Next: Publish PR and wait for Windows and Linux CI before merge; Open: none; Tree: 2 dirty file(s)

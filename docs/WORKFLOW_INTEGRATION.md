@@ -19,6 +19,8 @@ Run `.\scripts\setup-credentials.ps1` to enter provider keys into masked prompts
 
 The router loads that store once as it starts, including when started by either client's MCP server. No PowerShell wrapper is needed in the MCP registration. Existing environment variables take precedence, which also supports vault launchers and non-Windows environments. Use `-credential-store <path>` or `LLM_ROUTER_CREDENTIAL_STORE` to specify an alternate Windows store. Windows DPAPI files are tied to the Windows user and machine. Use a synced vault to provision a second machine.
 
+Only run trusted router configurations. The router resolves saved keys by `api_key_env` and sends the resolved key to that provider's configured `base_url`. For mock upstreams, use a dedicated dummy environment variable or set an explicit test credential store.
+
 ---
 
 ## 2. Antigravity IDE (Universal Across All Repos)
