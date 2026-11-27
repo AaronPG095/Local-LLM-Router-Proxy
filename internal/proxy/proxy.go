@@ -25,6 +25,7 @@ type Server struct {
 	guard    *budget.Guard
 	engine   *router.Engine
 	cache    *cache.Engine
+	tracker  *ProviderTracker
 	client   *http.Client
 	mux      *http.ServeMux
 }
@@ -66,6 +67,7 @@ func NewServer(cfg *config.Config, store *storage.Store, recorder *telemetry.Rec
 		guard:    guard,
 		engine:   eng,
 		cache:    cacheEng,
+		tracker:  NewProviderTracker(),
 		client:   &http.Client{Transport: transport},
 		mux:      http.NewServeMux(),
 	}
@@ -97,8 +99,15 @@ func (s *Server) handleMetricsSummary(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "failed to query metrics summary")
 		return
 	}
+	resp := struct {
+		storage.MetricsSummary
+		ProviderHealth map[string]ProviderHealth `json:"provider_health,omitempty"`
+	}{
+		MetricsSummary: sum,
+		ProviderHealth: s.tracker.StatusSnapshot(s.cfg.Providers, time.Now().UTC()),
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(sum)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleCache(w http.ResponseWriter, r *http.Request) {

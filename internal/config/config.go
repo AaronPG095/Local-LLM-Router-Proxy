@@ -29,6 +29,8 @@ type ProviderConfig struct {
 	Type         string                  `yaml:"type"`
 	BaseURL      string                  `yaml:"base_url"`
 	APIKeyEnv    string                  `yaml:"api_key_env"`
+	MaxRPM       int                     `yaml:"max_rpm"`
+	MaxRPD       int                     `yaml:"max_rpd"`
 	PricingPer1M map[string]ModelPricing `yaml:"pricing_per_1m"`
 }
 

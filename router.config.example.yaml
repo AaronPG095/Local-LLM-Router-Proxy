@@ -33,6 +33,31 @@ providers:
       qwen3:8b: { input: 0.0, output: 0.0 }
       gemma3:12b: { input: 0.0, output: 0.0 }
       qwen2.5-coder:14b: { input: 0.0, output: 0.0 }
+  # Optional standing free-tier cloud pool (non-sensitive tasks only; use X-Router-Privacy: local to force Ollama)
+  groq:
+    type: openai_compatible
+    base_url: "https://api.groq.com/openai/v1"
+    api_key_env: "GROQ_API_KEY"
+    max_rpm: 25
+    max_rpd: 1000
+    pricing_per_1m:
+      llama-3.3-70b-versatile: { input: 0.0, output: 0.0 }
+  openrouter_free:
+    type: openai_compatible
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OPENROUTER_API_KEY"
+    max_rpm: 15
+    max_rpd: 45
+    pricing_per_1m:
+      meta-llama/llama-3.3-70b-instruct:free: { input: 0.0, output: 0.0 }
+  mistral_free:
+    type: openai_compatible
+    base_url: "https://api.mistral.ai/v1"
+    api_key_env: "MISTRAL_API_KEY"
+    max_rpm: 20
+    max_rpd: 500
+    pricing_per_1m:
+      codestral-latest: { input: 0.0, output: 0.0 }
 
 routing:
   default_target: "gemini:gemini-2.5-flash"

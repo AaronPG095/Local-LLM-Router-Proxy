@@ -126,3 +126,40 @@ func TestEnginePolicyMatchingAndNeverDowngrade(t *testing.T) {
 		t.Fatalf("expected frontier-with-resilience rule, got %+v", dAlias)
 	}
 }
+
+func TestEnginePrivacyLocalStripsCloudProviders(t *testing.T) {
+	cfg := testRouterConfig()
+	cfg.Providers["groq"] = config.ProviderConfig{Type: "openai_compatible", BaseURL: "https://api.groq.com/openai/v1"}
+	cfg.Providers["ollama"] = config.ProviderConfig{
+		Type:    "openai_compatible",
+		BaseURL: "http://127.0.0.1:11434/v1",
+		PricingPer1M: map[string]config.ModelPricing{
+			"gemma3:4b": {Input: 0, Output: 0},
+		},
+	}
+	cfg.Routing.Rules = append([]config.RoutingRule{
+		{
+			Name:          "free-cloud-then-local",
+			Match:         config.MatchRule{Headers: map[string][]string{"X-Router-Task": {"summarize"}}},
+			Target:        "groq:llama-3.3-70b-versatile",
+			FallbackChain: []string{"gemini:gemini-2.5-flash", "ollama:gemma3:4b"},
+		},
+	}, cfg.Routing.Rules...)
+
+	eng, err := NewEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := http.Header{}
+	h.Set("X-Router-Task", "summarize")
+	h.Set("X-Router-Privacy", "local")
+	d := eng.Evaluate(RequestContext{
+		APIFormat:      "openai_chat",
+		RequestedModel: "gpt-4o",
+		Headers:        h,
+	})
+	if d.Primary.Provider != "ollama" || d.Primary.Model != "gemma3:4b" || len(d.Fallbacks) != 0 {
+		t.Fatalf("expected X-Router-Privacy=local to strip cloud providers, got %+v", d)
+	}
+}

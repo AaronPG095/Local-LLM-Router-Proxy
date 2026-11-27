@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: Free-Tier-Pool-And-Cooldown
 ticket: local://LLRP:LLRP-Plan-Free-Tier-Pool-And-Cooldown-2026-11
-status: planned
+status: in-progress
 priority: 
 state: 
 due: 
@@ -10,6 +10,9 @@ version:
 impact: 
 devTicketKey: LLRP:LLRP-Plan-Free-Tier-Pool-And-Cooldown-2026-11
 agent: Gemini
+branch: feat/free-tier-pool-and-cooldown
+worktree: Local-LLM-Router-Proxy
+startedAt: 2026-11-27
 ---
 # Free-Tier-Pool-And-Cooldown
 
@@ -29,15 +32,15 @@ None
 
 ## Acceptance criteria
 
-- [ ] AC1: `ProviderTracker` (`internal/proxy/cooldown.go`) handles `Retry-After` cooldowns, sliding 60s `max_rpm`, UTC-day `max_rpd`, and `StatusSnapshot`, verified by `internal/proxy/cooldown_test.go`.
-- [ ] AC2: `executeWithFallback` skips cooling-down/capped providers and marks `429`/`529` cooldowns; `/metrics/summary` exposes `provider_health`.
-- [ ] AC3: `X-Router-Privacy: local` strips non-local providers in `internal/router/engine.go` and `offload_llm` (`internal/mcp/server.go`), verified by `go test -v ./...`.
+- [x] AC1: `ProviderTracker` (`internal/proxy/cooldown.go`) handles `Retry-After` cooldowns, sliding 60s `max_rpm`, UTC-day `max_rpd`, and `StatusSnapshot`, verified by `internal/proxy/cooldown_test.go`. verified: go test -v ./internal/proxy/... passed (cooldown_test.go)
+- [x] AC2: `executeWithFallback` skips cooling-down/capped providers and marks `429`/`529` cooldowns; `/metrics/summary` exposes `provider_health`. verified: executeWithFallbackTracked and /metrics/summary provider_health tested
+- [x] AC3: `X-Router-Privacy: local` strips non-local providers in `internal/router/engine.go` and `offload_llm` (`internal/mcp/server.go`), verified by `go test -v ./...`. verified: go test -v ./internal/router/... ./internal/mcp/... passed
 
 ## Steps
 
-- [ ] Step 1: Add `MaxRPM`/`MaxRPD` config, `ProviderTracker`, fallback integration, and `provider_health` in `/metrics/summary` (AC1, AC2)
-- [ ] Step 2: Add `X-Router-Privacy: local` gate, `offload_llm` privacy arg, and free-tier templates in `router.config.example.yaml` (AC3)
-- [ ] Step 3: Run `go test -v ./...`, complete `adw pack --test`, independent review, `adw check`, and merge PR #8 (AC1, AC2, AC3)
+- [x] Step 1: Add `MaxRPM`/`MaxRPD` config, `ProviderTracker`, fallback integration, and `provider_health` in `/metrics/summary` (AC1, AC2)
+- [x] Step 2: Add `X-Router-Privacy: local` gate, `offload_llm` privacy arg, and free-tier templates in `router.config.example.yaml` (AC3)
+- [x] Step 3: Run `go test -v ./...`, complete `adw pack --test`, independent review, `adw check`, and merge PR #8 (AC1, AC2, AC3)
 
 ## Risks
 

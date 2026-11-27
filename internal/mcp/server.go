@@ -179,6 +179,11 @@ func toolDefinitions() []map[string]any {
 						"type":        "boolean",
 						"description": "Opt in to L2 semantic caching via X-Router-Semantic-Cache: allow (default false).",
 					},
+					"privacy": map[string]any{
+						"type":        "string",
+						"enum":        []string{"default", "local"},
+						"description": "Set 'local' to enforce X-Router-Privacy: local (strictly stays on local Ollama).",
+					},
 				},
 				"required": []string{"task", "prompt"},
 			},
@@ -228,6 +233,7 @@ func (s *Server) callOffloadLLM(ctx context.Context, rawArgs json.RawMessage) ma
 		System        string `json:"system"`
 		Deterministic *bool  `json:"deterministic"`
 		SemanticCache bool   `json:"semantic_cache"`
+		Privacy       string `json:"privacy"`
 	}
 	if err := json.Unmarshal(rawArgs, &args); err != nil || args.Task == "" || args.Prompt == "" {
 		return mcpError("offload_llm requires non-empty 'task' and 'prompt'")
@@ -257,6 +263,9 @@ func (s *Server) callOffloadLLM(ctx context.Context, rawArgs json.RawMessage) ma
 	req.Header.Set("X-Router-Task", args.Task)
 	if args.SemanticCache {
 		req.Header.Set("X-Router-Semantic-Cache", "allow")
+	}
+	if strings.EqualFold(args.Privacy, "local") {
+		req.Header.Set("X-Router-Privacy", "local")
 	}
 
 	resp, err := s.client.Do(req)

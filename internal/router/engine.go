@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -92,7 +93,10 @@ func ParseTarget(spec string) (RouteTarget, bool) {
 // Evaluate selects the primary target, fallback chain, and never_downgrade flag.
 func (e *Engine) Evaluate(rc RequestContext) Decision {
 	neverDowngrade := e.isNeverDowngrade(rc)
+	localOnly := strings.EqualFold(strings.TrimSpace(rc.Headers.Get("X-Router-Privacy")), "local")
 
+	var dec Decision
+	matched := false
 	for _, cr := range e.rules {
 		if !matchesRule(cr, rc) {
 			continue
@@ -104,19 +108,74 @@ func (e *Engine) Evaluate(rc RequestContext) Decision {
 				continue
 			}
 		}
-		return Decision{
+		dec = Decision{
 			Primary:              cr.primary,
 			Fallbacks:            append([]RouteTarget(nil), cr.fallbacks...),
 			RuleName:             cr.rule.Name,
 			NeverDowngrade:       neverDowngrade,
 			SemanticCacheAllowed: cr.rule.SemanticCache,
 		}
+		matched = true
+		break
 	}
 
-	return Decision{
-		Primary:        e.defaultPassThroughTarget(rc),
-		NeverDowngrade: neverDowngrade,
+	if !matched {
+		dec = Decision{
+			Primary:        e.defaultPassThroughTarget(rc),
+			NeverDowngrade: neverDowngrade,
+		}
 	}
+
+	if localOnly {
+		dec = e.enforceLocalOnly(dec)
+	}
+	return dec
+}
+
+func (e *Engine) isLocalProvider(providerName string) bool {
+	p, ok := e.cfg.Providers[providerName]
+	if !ok || p.Type != "openai_compatible" {
+		return false
+	}
+	u, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "127.0.0.1" || h == "localhost" || h == "::1"
+}
+
+func (e *Engine) enforceLocalOnly(dec Decision) Decision {
+	var localCandidates []RouteTarget
+	if e.isLocalProvider(dec.Primary.Provider) {
+		localCandidates = append(localCandidates, dec.Primary)
+	}
+	for _, fb := range dec.Fallbacks {
+		if e.isLocalProvider(fb.Provider) {
+			localCandidates = append(localCandidates, fb)
+		}
+	}
+	if len(localCandidates) > 0 {
+		dec.Primary = localCandidates[0]
+		dec.Fallbacks = localCandidates[1:]
+		return dec
+	}
+
+	if dt, ok := ParseTarget(e.cfg.Budgets.Session.DowngradeTarget); ok && e.isLocalProvider(dt.Provider) {
+		dec.Primary = dt
+		dec.Fallbacks = nil
+		return dec
+	}
+	for name, p := range e.cfg.Providers {
+		if e.isLocalProvider(name) {
+			for m := range p.PricingPer1M {
+				dec.Primary = RouteTarget{Provider: name, Model: m}
+				dec.Fallbacks = nil
+				return dec
+			}
+		}
+	}
+	return dec
 }
 
 func (e *Engine) isNeverDowngrade(rc RequestContext) bool {
