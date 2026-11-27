@@ -175,6 +175,9 @@ func (e *Engine) enforceLocalOnly(dec Decision) Decision {
 			}
 		}
 	}
+	// Fail closed: never leak a privacy=local request to a non-local provider.
+	dec.Primary = RouteTarget{}
+	dec.Fallbacks = nil
 	return dec
 }
 
