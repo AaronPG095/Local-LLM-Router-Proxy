@@ -29,8 +29,10 @@ providers:
     type: openai_compatible
     base_url: "http://127.0.0.1:11434/v1"
     pricing_per_1m:
-      qwen2.5-coder:7b: { input: 0.0, output: 0.0 }
-      llama3.2:3b: { input: 0.0, output: 0.0 }
+      gemma3:4b: { input: 0.0, output: 0.0 }
+      qwen3:8b: { input: 0.0, output: 0.0 }
+      gemma3:12b: { input: 0.0, output: 0.0 }
+      qwen2.5-coder:14b: { input: 0.0, output: 0.0 }
 
 routing:
   default_target: "gemini:gemini-2.5-flash"
@@ -42,14 +44,27 @@ routing:
       - "reasoning"
     when_reasoning_params_present: true
   rules:
-    - name: "commit-and-log-trim"
+    - name: "fast-mechanical-offload"
       match:
-        headers:
-          X-Router-Task: ["commit_msg", "log_trim", "summarize"]
+        headers: { X-Router-Task: ["commit_msg", "log_trim", "classify"] }
         has_tools: false
-      target: "ollama:qwen2.5-coder:7b"
+      target: "ollama:gemma3:4b"
       fallback_chain: ["gemini:gemini-2.5-flash", "openai:gpt-4o-mini"]
       semantic_cache: true
+    - name: "local-summarize"
+      match:
+        headers: { X-Router-Task: ["summarize"] }
+        has_tools: false
+      target: "ollama:qwen3:8b"
+      fallback_chain: ["gemini:gemini-2.5-flash"]
+      semantic_cache: true
+    - name: "deep-local-code-and-synthesis"
+      match:
+        headers: { X-Router-Task: ["pr_summary", "explain", "draft_tests", "boilerplate"] }
+        has_tools: false
+      target: "ollama:qwen2.5-coder:14b"
+      fallback_chain: ["ollama:gemma3:12b", "ollama:qwen3:8b"]
+      semantic_cache: false
 
 cache:
   l1_exact:
@@ -70,7 +85,7 @@ budgets:
     max_cost_usd: 2.00
     soft_warn_pct: 0.80
     hard_action: "downgrade"
-    downgrade_target: "ollama:qwen2.5-coder:7b"
+    downgrade_target: "ollama:qwen2.5-coder:14b"
   project_daily:
     max_tokens: 1000000
     max_cost_usd: 10.00

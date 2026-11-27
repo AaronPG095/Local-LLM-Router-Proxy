@@ -154,14 +154,14 @@ func toolDefinitions() []map[string]any {
 	return []map[string]any{
 		{
 			"name":        "offload_llm",
-			"description": "Offload a mechanical text task (commit_msg, log_trim, summarize, classify) to the local LLM Router Proxy (Ollama + L1/L2 cache) to save frontier tokens.",
+			"description": "Offload mechanical (commit_msg, log_trim, classify, summarize) or bounded code/synthesis tasks (pr_summary, explain, draft_tests, boilerplate) to the local LLM Router Proxy (Ollama + L1/L2 cache) to save frontier tokens.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"task": map[string]any{
 						"type":        "string",
-						"enum":        []string{"commit_msg", "log_trim", "summarize", "classify"},
-						"description": "Mechanical task category used for X-Router-Task policy routing.",
+						"enum":        []string{"commit_msg", "log_trim", "classify", "summarize", "pr_summary", "explain", "draft_tests", "boilerplate"},
+						"description": "Task category used for X-Router-Task policy routing.",
 					},
 					"prompt": map[string]any{
 						"type":        "string",
