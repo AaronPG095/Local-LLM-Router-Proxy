@@ -15,6 +15,11 @@ agent: Codex
 branch: feat/desktop-client-compatibility
 worktree: Local-LLM-Router-Proxy
 startedAt: 2026-11-27
+reviewedBy: Codex
+reviewVerdict: pass
+reviewSession: /root/desktop_client_review
+baseBranch: main
+reviewFingerprint: 1c0539d68557cc57c2cdcbe3cca3fcf1c93a42415bca73d442c6faa9950a510e
 ---
 # Desktop Client Compatibility
 
@@ -59,3 +64,5 @@ Approved plan:
 ## Progress log
 
 <!-- One line per session/review, added with `ticket.mjs log` or `ticket.mjs review` -->
+- 2026-11-27 13:45 UTC, Codex (review: pass): Independent pack tests and scope passed; four streaming routes and local privacy were covered, and Codex overrides parsed in a no-generation check. [reviewer: /root/desktop_client_review]
+- 2026-11-27 13:45 UTC, Codex (handoff): Done: Client guide, protocol tests, independent review, and both desktop MCP connections verified; Next: Publish PR and merge after Windows and Linux CI; Open: none; Tree: 1 dirty file(s)
