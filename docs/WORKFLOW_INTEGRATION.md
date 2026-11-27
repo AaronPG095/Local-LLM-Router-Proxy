@@ -1,60 +1,80 @@
-# Universal Workflow Integration Guide
+# Desktop client integration
 
-`Local-LLM-Router-Proxy` runs once on `127.0.0.1:8787` and serves **every repository** on your machine.
+The router runs once on `127.0.0.1:8787` and can serve several local clients.
 
----
+## 1. Start the local proxy
 
-## 1. Start the Local Proxy
-From this repository (or any terminal):
+From the router repository:
 
 ```powershell
 .\scripts\start-proxy.ps1
 ```
 
-If `llm-router.exe` is already listening on `http://127.0.0.1:8787/healthz`, the script exits immediately; otherwise it starts the proxy in the background using `router.config.yaml`.
+The script reuses an existing healthy router. If none is running, it starts the binary with `router.config.yaml`.
 
 ### Windows credentials
 
 Run `.\scripts\setup-credentials.ps1` to enter provider keys into masked prompts. Each accepted key is saved using Windows DPAPI in `%LOCALAPPDATA%\LocalLLMRouter\credentials.json`. This is the same store used by the earlier desktop setup. Press Enter to retain an existing key or skip an unused provider. After a rotation, restart the router to load the change.
 
-The router loads that store once as it starts, including when started by either client's MCP server. No PowerShell wrapper is needed in the MCP registration. Existing environment variables take precedence, which also supports vault launchers and non-Windows environments. Use `-credential-store <path>` or `LLM_ROUTER_CREDENTIAL_STORE` to specify an alternate Windows store. Windows DPAPI files are tied to the Windows user and machine. Use a synced vault to provision a second machine.
+The router loads that store once as it starts, including when started by either client's MCP server. Environment variables take precedence, which also supports vault launchers and non-Windows environments. Use `-credential-store <path>` or `LLM_ROUTER_CREDENTIAL_STORE` to specify an alternate Windows store. Windows DPAPI files are tied to the Windows user and machine.
 
 Only run trusted router configurations. The router resolves saved keys by `api_key_env` and sends the resolved key to that provider's configured `base_url`. For mock upstreams, use a dedicated dummy environment variable or set an explicit test credential store.
 
----
+## 2. MCP offload in Codex and Antigravity
 
-## 2. Antigravity IDE (Universal Across All Repos)
-Antigravity loads MCP servers globally from `%USERPROFILE%\.gemini\antigravity\mcp_config.json`.
-Register `bin\llm-router-mcp.exe` once:
+Register the built MCP executable as a stdio server. It starts the local proxy if needed. Both clients expose the same tools, including `offload_llm` and `router_metrics`. Use `privacy: "local"` when calling `offload_llm` to keep that task on Ollama.
+
+In Codex, run this command from the router repository:
+
+```powershell
+codex mcp add llm-router -- (Resolve-Path .\bin\llm-router-mcp.exe).Path
+```
+
+In Antigravity, open **MCP Servers → Manage MCP Servers → View raw config**. Add the entry below to the existing `mcpServers` object and substitute your absolute path. The installed client determines the config location. [Antigravity MCP documentation](https://antigravity.google/docs/ide-mcp)
 
 ```json
 {
   "mcpServers": {
     "llm-router": {
-      "command": "C:\\Users\\Aaron\\Desktop\\CODING\\Local-LLM-Router-Proxy\\bin\\llm-router-mcp.exe",
+      "command": "C:\\path\\to\\Local-LLM-Router-Proxy\\bin\\llm-router-mcp.exe",
       "args": []
     }
   }
 }
 ```
 
-- **Universal availability:** Every workspace/repo you open in Antigravity automatically has `offload_llm`, `router_metrics`, and `router_cache_purge`.
-- **Single-point updates:** Whenever you update this repo and rebuild `bin/llm-router-mcp.exe` (`go build -o bin/llm-router-mcp.exe ./cmd/router-mcp`), all repos pick up the updated binary automatically.
+Start a fresh client session after changing MCP settings. Call `router_metrics` to verify the connection without generating a cloud request. Agent chat still uses the provider selected by the client. CLI generation can use the router explicitly.
 
----
+## 3. Route CLI and SDK generation
 
-## 3. CLI Coding Agents (Codex, Claude Code, Gemini CLI)
-External CLIs and SDKs do **not** need the MCP server — point their base URL env var at `http://127.0.0.1:8787` (for example in your PowerShell `$PROFILE`):
+| Client | Router endpoint | Configuration |
+| --- | --- | --- |
+| Codex CLI | `POST /v1/responses` | Custom provider with a Responses base URL ending in `/v1`. |
+| Claude Code | `POST /v1/messages` | `ANTHROPIC_BASE_URL` points to the router origin. Use an Anthropic API key for API-key mode. |
+| Gemini CLI | `POST /v1beta/models/<model>:generateContent` or `:streamGenerateContent?alt=sse` | Select Gemini API-key authentication and set `GOOGLE_GEMINI_BASE_URL` to the router origin. |
+| OpenAI-compatible SDK | `POST /v1/chat/completions` | Point the SDK at `http://127.0.0.1:8787/v1` and request Chat Completions. |
+
+For Codex CLI, point a custom Responses provider at loopback. The router can supply its stored OpenAI key when the client omits authorization. Select an API model available to your OpenAI project. [Codex custom provider settings](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers)
 
 ```powershell
-# Codex CLI / OpenAI SDKs
-$env:OPENAI_BASE_URL = "http://127.0.0.1:8787/v1"
-
-# Claude Code / Anthropic SDKs
-$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:8787"
-
-# Gemini CLI / Google GenAI SDKs
-$env:GEMINI_API_BASE_URL = "http://127.0.0.1:8787"
+codex -c 'model_provider="local-router"' `
+      -c 'model_providers.local-router.name="Local LLM Router"' `
+      -c 'model_providers.local-router.base_url="http://127.0.0.1:8787/v1"' `
+      -c 'model_providers.local-router.wire_api="responses"'
 ```
 
-All requests from every repo are routed, cached, budget-checked, and logged to `data/router.db` and `data/telemetry.jsonl` (for `TokenHUD`).
+For Claude Code, Gemini CLI, or an SDK, set the relevant variables in the shell that launches the client. If the client requires a provider API key, supply the actual key for that provider. The router forwards existing provider authentication on native pass-through requests. [Claude Code gateways](https://code.claude.com/docs/en/llm-gateway) · [Gemini CLI configuration](https://geminicli.com/docs/reference/configuration/)
+
+```powershell
+# OpenAI SDKs using Chat Completions
+$env:OPENAI_BASE_URL = "http://127.0.0.1:8787/v1"
+
+# Claude Code in API-key mode
+$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:8787"
+
+# Gemini CLI using Gemini API-key authentication
+$env:GOOGLE_GEMINI_BASE_URL = "http://127.0.0.1:8787"
+$env:GOOGLE_GENAI_API_VERSION = "v1beta"
+```
+
+The table covers generation endpoints. Clients that require model discovery, token-count endpoints, managed sign-in, or WebSocket generation may need their normal provider connection or a separate integration. Check `X-Router-Provider` on an uncached response to verify routing. For local-only OpenAI Responses requests, send `X-Router-Privacy: local` and check for `ollama`.
