@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: Desktop Client Compatibility
 ticket: local://LLRP:LLRP-Plan-Desktop-Client-Compatibility-2026-11
-status: in-progress
+status: shipped
 priority: 
 state: 
 due: 
@@ -20,6 +20,7 @@ reviewVerdict: pass
 reviewSession: /root/desktop_client_review
 baseBranch: main
 reviewFingerprint: 1c0539d68557cc57c2cdcbe3cca3fcf1c93a42415bca73d442c6faa9950a510e
+pr: https://github.com/AaronPG095/Local-LLM-Router-Proxy/pull/11
 ---
 # Desktop Client Compatibility
 
