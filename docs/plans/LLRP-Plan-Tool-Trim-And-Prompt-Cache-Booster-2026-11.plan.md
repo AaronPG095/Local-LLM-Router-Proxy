@@ -13,6 +13,11 @@ agent: Gemini
 branch: feat/tool-trim-and-cache-booster
 worktree: Local-LLM-Router-Proxy
 startedAt: 2026-11-27
+reviewedBy: Gemini
+reviewVerdict: warn
+reviewSession: 53140153-10c7-4c7e-ab18-d634f42804fa
+baseBranch: main
+reviewFingerprint: 248207cf667757e801d1d5565b3752029b47740ce36ef6f60e064cb5f1470805
 ---
 # Tool-Trim-And-Prompt-Cache-Booster
 
@@ -57,3 +62,4 @@ Approved Plan:
 ## Progress log
 
 <!-- One line per session/review, added with `ticket.mjs log` or `ticket.mjs review` -->
+- 2026-11-27 12:12 UTC, Gemini (review: warn): OpenAI/Anthropic old tool-output trimming and cache_control booster verified; trimText updated to rune-safe UTF-8 slicing with added UTF-8 test. [reviewer: 53140153-10c7-4c7e-ab18-d634f42804fa]
