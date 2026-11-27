@@ -1,7 +1,7 @@
 ---
 title: Plan - Feature: Shared Desktop Credentials
 ticket: local://LLRP:LLRP-Plan-Shared-Desktop-Credentials-2026-11
-status: planned
+status: in-progress
 priority: 
 state: 
 due: 
@@ -11,6 +11,9 @@ impact:
 blueprint: docs/architecture/LLRP-Blueprint-Desktop-Client-Integration.md
 devTicketKey: LLRP:LLRP-Plan-Shared-Desktop-Credentials-2026-11
 agent: Codex
+branch: feat/shared-desktop-credentials
+worktree: Local-LLM-Router-Proxy
+startedAt: 2026-11-27
 ---
 # Shared Desktop Credentials
 
@@ -28,15 +31,15 @@ None.
 
 ## Acceptance criteria
 
-- [ ] AC1: A Windows router started directly or via MCP can use the existing Windows account's encrypted provider keys. Explicit environment keys take precedence and an absent store preserves the environment-only path on all platforms.
-- [ ] AC2: The supported Windows setup stores keys encrypted and can replace one key while preserving the other entries. Invalid or unreadable configured keys fail with diagnostics that omit credential material.
-- [ ] AC3: Automated tests cover precedence, invalid stores, and Windows encryption compatibility. Both binaries build, and a Windows cold-start and running-router reuse check records observed timing and outcomes.
+- [x] AC1: A Windows router started directly or via MCP can use the existing Windows account's encrypted provider keys. Explicit environment keys take precedence and an absent store preserves the environment-only path on all platforms. verified: Cold MCP startup and running-router reuse supplied the saved credential to a mock upstream; environment override and absent store covered by Go tests
+- [x] AC2: The supported Windows setup stores keys encrypted and can replace one key while preserving the other entries. Invalid or unreadable configured keys fail with diagnostics that omit credential material. verified: PowerShell test encrypted and rotated one entry, preserved a second entry, and Go tests confirmed redacted invalid-store errors
+- [x] AC3: Automated tests cover precedence, invalid stores, and Windows encryption compatibility. Both binaries build, and a Windows cold-start and running-router reuse check records observed timing and outcomes. verified: go test -v ./... and both Windows builds passed; isolated smoke observed 325 ms cold startup and 22 ms reuse
 
 ## Steps
 
-- [ ] Test and implement router-owned credential loading, including the existing JSON and DPAPI format and environment precedence. (AC1, AC2)
-- [ ] Add the supported Windows setup and document manual startup, MCP startup, and rotation. (AC1, AC2)
-- [ ] Run the full Go suite, build both binaries, and exercise isolated Windows cold-start and existing-router reuse with dummy credentials. (AC3)
+- [x] Test and implement router-owned credential loading, including the existing JSON and DPAPI format and environment precedence. (AC1, AC2) verified: Windows config tests passed for environment precedence, redacted failures and existing PowerShell DPAPI format
+- [x] Add the supported Windows setup and document manual startup, MCP startup, and rotation. (AC1, AC2) verified: Windows fixture saved two keys and replaced one while retaining the other; workflow guide documents startup and rotation
+- [x] Run the full Go suite, build both binaries, and exercise isolated Windows cold-start and existing-router reuse with dummy credentials. (AC3) verified: go test -v ./... passed; both Windows binaries built; isolated cold MCP 325 ms and warm reuse 22 ms with mock auth
 
 ## Risks
 

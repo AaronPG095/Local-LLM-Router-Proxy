@@ -17,6 +17,7 @@ type Config struct {
 	Compression CompressionConfig         `yaml:"compression"`
 	Budgets     BudgetsConfig             `yaml:"budgets"`
 	Telemetry   TelemetryConfig           `yaml:"telemetry"`
+	desktopKeys map[string]string
 }
 
 type CompressionConfig struct {
@@ -220,13 +221,16 @@ func validateBudgetScope(name string, b BudgetScopeConfig) error {
 	return nil
 }
 
-// ResolveAPIKey reads the configured environment variable for a provider's API key.
+// ResolveAPIKey prefers the provider's environment variable over its desktop credential.
 func (c *Config) ResolveAPIKey(providerName string) string {
 	p, ok := c.Providers[providerName]
 	if !ok || p.APIKeyEnv == "" {
 		return ""
 	}
-	return os.Getenv(p.APIKeyEnv)
+	if key := os.Getenv(p.APIKeyEnv); key != "" {
+		return key
+	}
+	return c.desktopKeys[p.APIKeyEnv]
 }
 
 // LookupPricing returns the model pricing if configured for the provider and model.

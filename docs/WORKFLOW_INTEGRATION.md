@@ -13,6 +13,12 @@ From this repository (or any terminal):
 
 If `llm-router.exe` is already listening on `http://127.0.0.1:8787/healthz`, the script exits immediately; otherwise it starts the proxy in the background using `router.config.yaml`.
 
+### Windows credentials
+
+Run `.\scripts\setup-credentials.ps1` to enter provider keys into masked prompts. Each accepted key is saved using Windows DPAPI in `%LOCALAPPDATA%\LocalLLMRouter\credentials.json`. This is the same store used by the earlier desktop setup. Press Enter to retain an existing key or skip an unused provider. After a rotation, restart the router to load the change.
+
+The router loads that store once as it starts, including when started by either client's MCP server. No PowerShell wrapper is needed in the MCP registration. Existing environment variables take precedence, which also supports vault launchers and non-Windows environments. Use `-credential-store <path>` or `LLM_ROUTER_CREDENTIAL_STORE` to specify an alternate Windows store. Windows DPAPI files are tied to the Windows user and machine. Use a synced vault to provision a second machine.
+
 ---
 
 ## 2. Antigravity IDE (Universal Across All Repos)

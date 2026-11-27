@@ -21,6 +21,10 @@ go build -o bin/llm-router-mcp.exe ./cmd/router-mcp
 .\scripts\start-proxy.ps1
 ```
 
+On Windows, run `.\scripts\setup-credentials.ps1` to store provider keys with Windows DPAPI.
+The router loads saved keys at startup, and environment variables take precedence.
+Run setup again to rotate one key. Press Enter at every other prompt to keep those keys.
+
 - Health check: `GET http://127.0.0.1:8787/healthz`
 - Live metrics (`TokenHUD`-compatible): `GET http://127.0.0.1:8787/metrics/summary`
 - Cache invalidation: `DELETE http://127.0.0.1:8787/cache` (optional `?namespace=...`)
