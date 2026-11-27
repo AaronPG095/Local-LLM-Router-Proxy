@@ -98,7 +98,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	candidates := s.buildCandidates(routeDec, budgetDec)
 	preUpstreamMs := time.Since(start).Milliseconds()
 
-	resp, winner, fallbackAttempts, err := executeWithFallback(r.Context(), candidates, func(t router.RouteTarget) (*http.Request, error) {
+	resp, winner, fallbackAttempts, err := executeWithFallbackTracked(r.Context(), candidates, s.tracker, s.cfg.Providers, func(t router.RouteTarget) (*http.Request, error) {
 		pCfg, exists := s.cfg.Providers[t.Provider]
 		if !exists {
 			return nil, fmt.Errorf("provider %q not configured", t.Provider)
