@@ -91,6 +91,13 @@ func (s *Server) handleOpenAIChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reqBody, requestedModel, isStream := prepareOpenAIBody(rawBody)
+	if shouldCompress(r, s.cfg.Compression) {
+		var savedChars int
+		reqBody, savedChars = trimOldOpenAIToolOutputs(reqBody, s.cfg.Compression)
+		if savedChars > 0 {
+			w.Header().Set("X-Router-Trimmed-Chars", fmt.Sprintf("%d", savedChars))
+		}
+	}
 	sysPrompt, hasTools, hasReasoning := extractOpenAIMeta(rawBody)
 
 	routeDec := s.engine.Evaluate(router.RequestContext{

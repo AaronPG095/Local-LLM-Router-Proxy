@@ -104,6 +104,14 @@ cache:
     ttl_seconds: 21600
     max_candidates: 500
 
+compression:
+  enabled: true
+  keep_recent_messages: 6
+  min_tool_result_chars: 4000
+  head_chars: 800
+  tail_chars: 800
+  anthropic_cache_control: true
+
 budgets:
   session:
     max_tokens: 200000
