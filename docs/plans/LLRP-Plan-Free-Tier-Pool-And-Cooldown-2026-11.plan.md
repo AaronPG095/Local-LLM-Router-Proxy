@@ -13,6 +13,11 @@ agent: Gemini
 branch: feat/free-tier-pool-and-cooldown
 worktree: Local-LLM-Router-Proxy
 startedAt: 2026-11-27
+reviewedBy: Gemini
+reviewVerdict: warn
+reviewSession: de150baa-3e7e-4291-a5cb-fd7b76f9d384
+baseBranch: main
+reviewFingerprint: 61c0717402daf88380ad5b57d9e58de5cf8431017c0d40e78d7407fdd1015982
 ---
 # Free-Tier-Pool-And-Cooldown
 
@@ -58,3 +63,4 @@ Approved Plan:
 ## Progress log
 
 <!-- One line per session/review, added with `ticket.mjs log` or `ticket.mjs review` -->
+- 2026-11-27 12:09 UTC, Gemini (review: warn): Thread-safe ProviderTracker, Retry-After cooldowns, RPM/RPD caps, and X-Router-Privacy: local verified; enforceLocalOnly updated to fail closed when no local provider exists. [reviewer: de150baa-3e7e-4291-a5cb-fd7b76f9d384]
