@@ -8,7 +8,10 @@ on:
 
 jobs:
   test-and-build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -17,4 +20,4 @@ jobs:
       - name: Run tests
         run: go test -v ./...
       - name: Build binary
-        run: go build ./cmd/router
+        run: go build ./cmd/router ./cmd/router-mcp

@@ -20,11 +20,15 @@ import (
 
 func main() {
 	cfgPath := flag.String("config", "router.config.yaml", "path to router YAML config")
+	credentialStore := flag.String("credential-store", os.Getenv("LLM_ROUTER_CREDENTIAL_STORE"), "override the Windows DPAPI credential store path")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
+	}
+	if err := cfg.LoadCredentials(*credentialStore); err != nil {
+		log.Fatalf("load credentials: %v", err)
 	}
 
 	store, err := storage.Open(cfg.Telemetry.SQLitePath)
