@@ -10,12 +10,22 @@ import (
 
 // Config represents the root configuration for the LLM router proxy.
 type Config struct {
-	Server    ServerConfig              `yaml:"server"`
-	Providers map[string]ProviderConfig `yaml:"providers"`
-	Routing   RoutingConfig             `yaml:"routing"`
-	Cache     CacheConfig               `yaml:"cache"`
-	Budgets   BudgetsConfig             `yaml:"budgets"`
-	Telemetry TelemetryConfig           `yaml:"telemetry"`
+	Server      ServerConfig              `yaml:"server"`
+	Providers   map[string]ProviderConfig `yaml:"providers"`
+	Routing     RoutingConfig             `yaml:"routing"`
+	Cache       CacheConfig               `yaml:"cache"`
+	Compression CompressionConfig         `yaml:"compression"`
+	Budgets     BudgetsConfig             `yaml:"budgets"`
+	Telemetry   TelemetryConfig           `yaml:"telemetry"`
+}
+
+type CompressionConfig struct {
+	Enabled               bool `yaml:"enabled"`
+	KeepRecentMessages    int  `yaml:"keep_recent_messages"`
+	MinToolResultChars    int  `yaml:"min_tool_result_chars"`
+	HeadChars             int  `yaml:"head_chars"`
+	TailChars             int  `yaml:"tail_chars"`
+	AnthropicCacheControl bool `yaml:"anthropic_cache_control"`
 }
 
 type ServerConfig struct {
@@ -147,6 +157,18 @@ func (c *Config) applyDefaults() {
 	}
 	applyBudgetDefaults(&c.Budgets.Session)
 	applyBudgetDefaults(&c.Budgets.ProjectDaily)
+	if c.Compression.KeepRecentMessages <= 0 {
+		c.Compression.KeepRecentMessages = 6
+	}
+	if c.Compression.MinToolResultChars <= 0 {
+		c.Compression.MinToolResultChars = 4000
+	}
+	if c.Compression.HeadChars <= 0 {
+		c.Compression.HeadChars = 800
+	}
+	if c.Compression.TailChars <= 0 {
+		c.Compression.TailChars = 800
+	}
 }
 
 func applyBudgetDefaults(b *BudgetScopeConfig) {

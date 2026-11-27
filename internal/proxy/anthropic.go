@@ -63,6 +63,14 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 	}
 
 	requestedModel, isStream, sysPrompt, hasTools, hasReasoning := extractAnthropicMeta(rawBody)
+	if shouldCompress(r, s.cfg.Compression) {
+		var savedChars int
+		rawBody, savedChars = trimOldAnthropicToolResults(rawBody, s.cfg.Compression)
+		if savedChars > 0 {
+			w.Header().Set("X-Router-Trimmed-Chars", fmt.Sprintf("%d", savedChars))
+		}
+	}
+	rawBody = injectAnthropicCacheControl(rawBody, s.cfg.Compression.AnthropicCacheControl)
 	routeDec := s.engine.Evaluate(router.RequestContext{
 		APIFormat:          "anthropic_messages",
 		RequestedModel:     requestedModel,
